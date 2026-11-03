@@ -1,0 +1,582 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Live2D Cubism Web - Real SDK Example</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%; height: 100%;
+      background: #0b1120; color: #f8fafc;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      overflow: hidden;
+    }
+    #stage {
+      width: 100vw; height: 100vh;
+      display: flex; align-items: center; justify-content: center;
+      position: relative;
+    }
+    canvas { display: block; position: absolute; inset: 0; width: 100vw; height: 100vh; }
+    #loader {
+      position: absolute; inset: 0; background: #0b1120;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      z-index: 50; transition: opacity 0.3s ease;
+    }
+    #loader.hidden { opacity: 0; pointer-events: none; }
+    .spinner {
+      width: 40px; height: 40px; border: 4px solid #1e293b;
+      border-top-color: #38bdf8; border-radius: 50%;
+      animation: spin 0.8s linear infinite; margin-bottom: 1rem;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .progress-bar { width: 320px; height: 6px; background: #1e293b; border-radius: 3px; overflow: hidden; margin-bottom: 0.5rem; }
+    .progress-fill { width: 0%; height: 100%; background: #38bdf8; transition: width 0.1s ease; }
+    .load-text { font-size: 0.9rem; color: #94a3b8; margin-bottom: 0.25rem; min-height: 1.2rem; text-align: center; }
+    .load-percent { font-size: 0.8rem; color: #64748b; }
+    .load-error { color: #f87171; font-size: 0.85rem; margin-top: 0.75rem; display: none; text-align: center; padding: 0 1rem; }
+    .hint {
+      position: absolute; bottom: 1rem; left: 50%; transform: translateX(-50%);
+      font-size: 0.8rem; color: #64748b; pointer-events: none; z-index: 5;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="stage">
+    <canvas id="glcanvas" width="800" height="600"></canvas>
+
+    <div id="loader">
+      <div class="spinner"></div>
+      <div class="load-text" id="loadText">Loading modules...</div>
+      <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+      <div class="load-percent" id="loadPercent">0%</div>
+      <div class="load-error" id="loadError"></div>
+    </div>
+
+    <div class="hint">Move your mouse - the model follows your cursor</div>
+  </div>
+
+  <!-- 1. Cubism Core -->
+  <script src="./core/live2dcubismcore.js"></script>
+
+  <!-- 2. CubismWebFramework modules -->
+  <script type="module">
+    import {
+      CubismFramework, Option, LogLevel,
+    } from './framework/dist/live2dcubismframework.js';
+
+    import { CubismModelSettingJson } from './framework/dist/cubismmodelsettingjson.js';
+    import { CubismMoc } from './framework/dist/model/cubismmoc.js';
+    import { CubismRenderer_WebGL } from './framework/dist/rendering/cubismrenderer_webgl.js';
+    import { CubismWebGLOffscreenManager } from './framework/dist/rendering/cubismoffscreenmanager.js';
+    import { CubismMatrix44 } from './framework/dist/math/cubismmatrix44.js';
+    import { CubismDefaultParameterId } from './framework/dist/cubismdefaultparameterid.js';
+    import { CubismBreath } from './framework/dist/effect/cubismbreath.js';
+    import { CubismEyeBlink } from './framework/dist/effect/cubismeyeblink.js';
+    import { CubismLook } from './framework/dist/effect/cubismlook.js';
+    import { BreathParameterData } from './framework/dist/effect/cubismbreath.js';
+    import { LookParameterData } from './framework/dist/effect/cubismlook.js';
+    import { CubismPose } from './framework/dist/effect/cubismpose.js';
+    import { CubismPhysics } from './framework/dist/physics/cubismphysics.js';
+    import { CubismMotion } from './framework/dist/motion/cubismmotion.js';
+    import { CubismMotionManager } from './framework/dist/motion/cubismmotionmanager.js';
+
+    // ========================================================================
+    // DOM
+    // ========================================================================
+    const canvas = document.getElementById('glcanvas');
+    // antialias:true enables MSAA on the default framebuffer, which smooths the
+    // model's silhouette edges (the jaggies you're seeing).
+    const glAttrs = { antialias: true, alpha: true, premultipliedAlpha: true };
+    const gl = canvas.getContext('webgl', glAttrs) || canvas.getContext('experimental-webgl', glAttrs);
+    if (!gl) throw new Error('WebGL not supported');
+
+    // Fill the viewport and render at device resolution; ZOOM enlarges the model
+    // within the frame (Hiyori's canvas has built-in margin, so > 1 tightens it).
+    const DPR = window.devicePixelRatio || 1;
+    const ZOOM = 1.15;
+    function resizeCanvas() {
+      canvas.width = Math.max(1, Math.floor(window.innerWidth * DPR));
+      canvas.height = Math.max(1, Math.floor(window.innerHeight * DPR));
+      gl.viewport(0, 0, canvas.width, canvas.height);
+    }
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+
+    const loaderEl = document.getElementById('loader');
+    const loadTextEl = document.getElementById('loadText');
+    const progressFillEl = document.getElementById('progressFill');
+    const loadPercentEl = document.getElementById('loadPercent');
+    const loadErrorEl = document.getElementById('loadError');
+
+    function setProgress(text, pct) {
+      loadTextEl.textContent = text;
+      loadPercentEl.textContent = Math.round(pct) + '%';
+      progressFillEl.style.width = Math.round(pct) + '%';
+      console.log('[LIVE2D]', text);
+    }
+
+    function showError(msg) {
+      loadErrorEl.textContent = msg;
+      loadErrorEl.style.display = 'block';
+      console.error('[ERROR]', msg);
+    }
+
+    // ========================================================================
+    // State
+    // ========================================================================
+    let model, renderer, setting;
+    let eyeBlink, breath, look, physics, pose;
+    let motionManager, motionGroups = {};
+    // Motion priorities (match the Cubism sample: idle < normal < force).
+    const P_IDLE = 1, P_NORMAL = 2, P_FORCE = 3;
+    let userTimeSeconds = 0, lastTime = 0;
+    // MOUSE_SENSITIVITY multiplies cursor offset so the head reaches full turn with
+    // less mouse travel; LOOK_SMOOTH controls how fast it eases toward the cursor
+    // (higher = snappier). Both are tunable to taste.
+    const MOUSE_SENSITIVITY = 2.0;
+    const LOOK_SMOOTH = 12.0;
+    // mouseX/mouseY = raw target from cursor; dragX/dragY = smoothed value fed to CubismLook.
+    let mouseX = 0, mouseY = 0, dragX = 0, dragY = 0;
+    // Whole-model pan (in clip space, [-1,1]) driven by dragging with the pointer.
+    let offsetX = 0, offsetY = 0;
+    let isDragging = false, dragStartX = 0, dragStartY = 0, dragStartOffsetX = 0, dragStartOffsetY = 0, dragMoved = 0;
+    // Press feedback: the model holds a squash (scale dip) while the pointer is
+    // pressed and springs back only on release. pressPulse eases toward 1 while
+    // held, toward 0 when released.
+    const PRESS_SQUASH = 0.08;   // how much it shrinks while held (8%)
+    const PRESS_SPRING = 12.0;   // how fast it eases in/out (higher = snappier)
+    let pressPulse = 0, pressHeld = false;
+
+    // ========================================================================
+    // Fetch helpers
+    // ========================================================================
+    async function fetchAB(url) {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + url);
+      return r.arrayBuffer();
+    }
+    async function fetchBlob(url) {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + url);
+      return r.blob();
+    }
+    async function fetchText(url) {
+      const r = await fetch(url);
+      if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + url);
+      return r.text();
+    }
+
+    // ========================================================================
+    // Init
+    // ========================================================================
+    async function init() {
+      try {
+        setProgress('Initializing CubismFramework...', 5);
+        const option = new Option();
+        option.logFunction = (m) => console.log('[Cubism]', m);
+        option.loggingLevel = LogLevel.LogLevel_Verbose;
+
+        CubismFramework.startUp(option);
+        CubismFramework.initialize();
+        console.log('[LIVE2D] Framework initialized');
+
+        const MODEL_DIR = './models/hiyori/';
+        const MODEL_JSON = MODEL_DIR + 'Hiyori.model3.json';
+
+        setProgress('Loading model3.json...', 10);
+        const m3 = await fetchAB(MODEL_JSON);
+        setting = new CubismModelSettingJson(m3, m3.byteLength);
+        console.log('[LIVE2D] model3.json loaded');
+
+        // Build asset list
+        const assetList = [];
+        const mocFileName = setting.getModelFileName();
+        console.log('[LIVE2D] moc file:', mocFileName);
+        assetList.push({ name: mocFileName, url: MODEL_DIR + mocFileName, type: 'ab' });
+        for (let i = 0; i < setting.getTextureCount(); i++) {
+          const tn = setting.getTextureFileName(i);
+          assetList.push({ name: tn, url: MODEL_DIR + tn, type: 'blob' });
+        }
+        // Optional physics (Hiyori has hair/sway) — load if referenced.
+        const physicsFileName = setting.getPhysicsFileName();
+        if (physicsFileName) {
+          assetList.push({ name: physicsFileName, url: MODEL_DIR + physicsFileName, type: 'ab' });
+        }
+        // Pose (toggles exclusive parts, e.g. Hiyori's ArmA vs ArmB — fixes "double hands").
+        const poseFileName = setting.getPoseFileName();
+        if (poseFileName) {
+          assetList.push({ name: poseFileName, url: MODEL_DIR + poseFileName, type: 'ab' });
+        }
+        // Motions: enumerate every group and load each motion3.json.
+        const motionRefs = []; // [{group, index, name}]
+        for (let g = 0; g < setting.getMotionGroupCount(); g++) {
+          const groupName = setting.getMotionGroupName(g);
+          for (let i = 0; i < setting.getMotionCount(groupName); i++) {
+            const mn = setting.getMotionFileName(groupName, i);
+            motionRefs.push({ group: groupName, index: i, name: mn });
+            assetList.push({ name: mn, url: MODEL_DIR + mn, type: 'ab' });
+          }
+        }
+        const shaders = [
+          'vertshadersrc.vert','vertshadersrcmasked.vert','vertshadersrcsetupmask.vert',
+          'fragshadersrcsetupmask.frag','fragshadersrcpremultipliedalpha.frag',
+          'fragshadersrcmaskpremultipliedalpha.frag','fragshadersrcmaskinvertedpremultipliedalpha.frag',
+          'vertshadersrccopy.vert','fragshadersrccopy.frag','fragshadersrccolorblend.frag',
+          'fragshadersrcalphablend.frag','vertshadersrcblend.vert','fragshadersrcpremultipliedalphablend.frag',
+        ];
+        for (const s of shaders) assetList.push({ name: s, url: './framework/shaders/' + s, type: 'text' });
+
+        setProgress('Fetching ' + assetList.length + ' assets...', 15);
+
+        const results = await Promise.allSettled(assetList.map(async (a) => {
+          if (a.type === 'ab') return { name: a.name, data: await fetchAB(a.url) };
+          if (a.type === 'blob') return { name: a.name, data: await fetchBlob(a.url) };
+          if (a.type === 'text') return { name: a.name, data: await fetchText(a.url) };
+        }));
+
+        const assetMap = {};
+        let failed = 0;
+        for (const r of results) {
+          if (r.status === 'fulfilled') {
+            assetMap[r.value.name] = r.value.data;
+          } else {
+            failed++;
+            console.warn('[LIVE2D] Failed to load', r.reason);
+          }
+        }
+        if (failed > 0) showError(failed + ' asset(s) failed - check console');
+        console.log('[LIVE2D] All assets fetched');
+
+        // Create model
+        setProgress('Creating Live2D model...', 90);
+        console.log('[LIVE2D] Creating Moc from buffer...');
+        const moc = CubismMoc.create(assetMap[mocFileName]);
+        console.log('[LIVE2D] Moc created:', typeof moc);
+
+        console.log('[LIVE2D] Creating model from Moc...');
+        model = moc.createModel();
+        console.log('[LIVE2D] Model created:', typeof model);
+
+        // Renderer
+        console.log('[LIVE2D] Creating renderer...');
+        renderer = new CubismRenderer_WebGL();
+
+        // initialize(model) must run before startUp: startUp reads model state
+        // (isUsingMasking / isBlendModeEnabled) to size its mask buffers.
+        console.log('[LIVE2D] Initializing renderer with model...');
+        renderer.initialize(model);
+        console.log('[LIVE2D] Renderer initialized (model bound)');
+
+        // Mask quality: use the SDK's own default mask path. Its fragment shader
+        // (fragshadersrcsetupmask.frag) already samples the mask with a bilinear +
+        // soft-threshold step, which is Live2D's built-in edge smoothing. The
+        // high-precision redraw path is expensive and unnecessary for this scene;
+        // the default 1024 mask buffer is plenty and combined with the context's
+        // MSAA (antialias:true) yields clean edges.
+        renderer.setClippingMaskBufferSize(1024);
+        renderer.setIsPremultipliedAlpha(true);
+        console.log('[LIVE2D] Edge smoothing via SDK mask + MSAA; PMA on');
+
+        console.log('[LIVE2D] Starting up renderer with GL...');
+        renderer.startUp(gl);
+        console.log('[LIVE2D] Renderer started up');
+
+        // Crisp texture detail at oblique angles (renderer applies this per-texture
+        // during drawModel via the anisotropic extension it detects in startUp).
+        const anisoExt = gl.getExtension('EXT_texture_filter_anisotropic')
+          || gl.getExtension('WEBKIT_EXT_texture_filter_anisotropic')
+          || gl.getExtension('MOZ_EXT_texture_filter_anisotropic');
+        if (anisoExt) {
+          const maxAniso = gl.getParameter(anisoExt.MAX_TEXTURE_MAX_ANISOTROPY_EXT);
+          renderer.setAnisotropy(maxAniso);
+          console.log('[LIVE2D] Anisotropic filtering:', maxAniso);
+        }
+
+        // Shaders are loaded lazily by drawModel/loadShaders; ./framework/shaders/
+        // overrides the SDK's default relative path ('../../Framework/Shaders/WebGL/').
+        console.log('[LIVE2D] Preloading shaders...');
+        renderer.loadShaders('./framework/shaders/');
+
+        // Textures
+        console.log('[LIVE2D] Loading textures...');
+        for (let i = 0; i < setting.getTextureCount(); i++) {
+          const tn = setting.getTextureFileName(i);
+          console.log('[LIVE2D] Texture', i, ':', tn);
+          const tex = await createTextureFromBlob(gl, assetMap[tn], true);
+          renderer.bindTexture(i, tex);
+          console.log('[LIVE2D] Texture', i, 'bound');
+        }
+
+        // Parameter IDs
+        const idm = CubismFramework.getIdManager();
+        const idParamAngleX = idm.getId(CubismDefaultParameterId.ParamAngleX);
+        const idParamAngleY = idm.getId(CubismDefaultParameterId.ParamAngleY);
+        const idParamAngleZ = idm.getId(CubismDefaultParameterId.ParamAngleZ);
+        const idParamEyeBallX = idm.getId(CubismDefaultParameterId.ParamEyeBallX);
+        const idParamEyeBallY = idm.getId(CubismDefaultParameterId.ParamEyeBallY);
+
+        // EyeBlink
+        eyeBlink = CubismEyeBlink.create(setting);
+
+        // Breath
+        breath = CubismBreath.create();
+        breath.setParameters([
+          new BreathParameterData(idParamAngleX, 0, 15, 6.5345, 0.5),
+          new BreathParameterData(idParamAngleY, 0, 8, 3.5345, 0.5),
+          new BreathParameterData(idParamAngleZ, 0, 10, 5.5345, 0.5),
+        ]);
+
+        // Look
+        look = CubismLook.create();
+        look.setParameters([
+          new LookParameterData(idParamAngleX, 30, 0, 0),
+          new LookParameterData(idParamAngleY, 0, 30, 0),
+          new LookParameterData(idParamAngleZ, 0, 0, -30),
+          new LookParameterData(idParamEyeBallX, 1, 0, 0),
+          new LookParameterData(idParamEyeBallY, 0, 1, 0),
+        ]);
+
+        // Physics (hair / cloth sway)
+        if (physicsFileName && assetMap[physicsFileName]) {
+          const pbuf = assetMap[physicsFileName];
+          physics = CubismPhysics.create(pbuf, pbuf.byteLength);
+          console.log('[LIVE2D] Physics created:', typeof physics);
+        }
+
+        // Pose — drives exclusive part visibility (ArmA vs ArmB).
+        if (poseFileName && assetMap[poseFileName]) {
+          const poseBuf = assetMap[poseFileName];
+          pose = CubismPose.create(poseBuf, poseBuf.byteLength);
+          console.log('[LIVE2D] Pose created:', typeof pose);
+        }
+
+        // Motions — build CubismMotion instances per group and enable cross-fades.
+        // Motions read these id lists during update; leaving them null throws.
+        const eyeBlinkIds = [];
+        for (let i = 0; i < setting.getEyeBlinkParameterCount(); i++) {
+          eyeBlinkIds.push(setting.getEyeBlinkParameterId(i));
+        }
+        const lipSyncIds = [];
+        for (let i = 0; i < setting.getLipSyncParameterCount(); i++) {
+          lipSyncIds.push(setting.getLipSyncParameterId(i));
+        }
+        for (const ref of motionRefs) {
+          const buf = assetMap[ref.name];
+          if (!buf) continue;
+          const motion = CubismMotion.create(buf, buf.byteLength);
+          motion.setEffectIds(eyeBlinkIds, lipSyncIds);
+          const fi = setting.getMotionFadeInTimeValue(ref.group, ref.index);
+          const fo = setting.getMotionFadeOutTimeValue(ref.group, ref.index);
+          if (fi >= 0) motion.setFadeInTime(fi);
+          if (fo >= 0) motion.setFadeOutTime(fo);
+          (motionGroups[ref.group] = motionGroups[ref.group] || []).push(motion);
+        }
+        console.log('[LIVE2D] Motion groups:', Object.keys(motionGroups).map((k) => k + '(' + motionGroups[k].length + ')').join(', '));
+
+        // Motion manager + kick off an idle clip.
+        motionManager = new CubismMotionManager();
+        startRandomMotion('Idle', P_IDLE);
+
+        setProgress('Ready!', 100);
+        loaderEl.classList.add('hidden');
+        lastTime = performance.now();
+        requestAnimationFrame(loop);
+
+      } catch (err) {
+        console.error('Init failed:', err);
+        showError('Error: ' + err.message);
+      }
+    }
+
+    function createTextureFromBlob(gl, blob, premult) {
+      return new Promise((res, rej) => {
+        const img = new Image();
+        img.onload = () => {
+          const tex = gl.createTexture();
+          gl.bindTexture(gl.TEXTURE_2D, tex);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+          gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, premult ? 1 : 0);
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+          gl.bindTexture(gl.TEXTURE_2D, null);
+          res(tex);
+        };
+        img.onerror = () => rej(new Error('Image decode failed'));
+        img.src = URL.createObjectURL(blob);
+      });
+    }
+
+    // ========================================================================
+    // Motion helpers
+    // ========================================================================
+    function startMotion(group, index, priority) {
+      if (!motionManager) return;
+      const list = motionGroups[group];
+      if (!list || !list[index]) return;
+      if (priority === P_FORCE) {
+        motionManager.setReservePriority(P_FORCE);
+      } else if (!motionManager.reserveMotion(priority)) {
+        return; // a higher/equal-priority motion is already running/reserved
+      }
+      // autoDelete=false: these CubismMotion instances are reused across plays.
+      motionManager.startMotionPriority(list[index], false, priority);
+    }
+
+    function startRandomMotion(group, priority) {
+      const list = motionGroups[group];
+      if (!list || list.length === 0) return;
+      startMotion(group, Math.floor(Math.random() * list.length), priority);
+    }
+
+    // Drag the whole model with the pointer; a press-and-release without real
+    // movement is treated as a tap (plays a body motion, as before).
+    const TAP_THRESHOLD_PX = 6;
+    canvas.addEventListener('pointerdown', (e) => {
+      pressHeld = true; // hold the squash until the pointer is released
+      isDragging = true;
+      dragMoved = 0;
+      dragStartX = e.clientX;
+      dragStartY = e.clientY;
+      dragStartOffsetX = offsetX;
+      dragStartOffsetY = offsetY;
+      canvas.setPointerCapture(e.pointerId);
+    });
+
+    canvas.addEventListener('pointermove', (e) => {
+      if (!isDragging) return;
+      const rect = canvas.getBoundingClientRect();
+      const dx = e.clientX - dragStartX;
+      const dy = e.clientY - dragStartY;
+      dragMoved = Math.max(dragMoved, Math.hypot(dx, dy));
+      // Screen px -> clip space: X spans [-1,1] over width, Y is up so invert.
+      offsetX = dragStartOffsetX + dx * (2 / rect.width);
+      offsetY = dragStartOffsetY - dy * (2 / rect.height);
+    });
+
+    canvas.addEventListener('pointerup', (e) => {
+      pressHeld = false; // release the squash on pointer up
+      if (!isDragging) return;
+      isDragging = false;
+      canvas.releasePointerCapture(e.pointerId);
+      if (dragMoved < TAP_THRESHOLD_PX) {
+        if (motionGroups['TapBody'] && motionGroups['TapBody'].length) {
+          startRandomMotion('TapBody', P_NORMAL);
+        } else {
+          startRandomMotion('Idle', P_NORMAL);
+        }
+      }
+    });
+
+    // If the pointer is cancelled (e.g. lost capture), also release the squash.
+    canvas.addEventListener('pointercancel', () => { pressHeld = false; isDragging = false; });
+
+    // Mouse tracking (store raw target, clamped to [-1, 1])
+    window.addEventListener('mousemove', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      mouseX = Math.max(-1, Math.min(1, ((e.clientX - rect.left) / rect.width - 0.5) * 2 * MOUSE_SENSITIVITY));
+      mouseY = Math.max(-1, Math.min(1, ((e.clientY - rect.top) / rect.height - 0.5) * 2 * MOUSE_SENSITIVITY));
+    });
+
+    // Loop
+    function loop(now) {
+      requestAnimationFrame(loop);
+      if (!model || !renderer) { return; }
+      try {
+        const dt = Math.min((now - lastTime) / 1000, 1 / 30);
+        lastTime = now;
+        userTimeSeconds += dt;
+
+        // Ease the squash toward the pressed target: stays dipped while held,
+        // springs back to full size only after release.
+        const pressTarget = pressHeld ? 1 : 0;
+        pressPulse += (pressTarget - pressPulse) * Math.min(1.0, dt * PRESS_SPRING);
+
+        // Smooth the drag toward the cursor so the head/eyes ease instead of snapping.
+        const lerp = Math.min(1.0, dt * LOOK_SMOOTH);
+        dragX += (mouseX - dragX) * lerp;
+        dragY += (mouseY - dragY) * lerp;
+
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        gl.enable(gl.BLEND);
+        // Premultiplied-alpha blending (textures are uploaded PMA and the context
+        // is premultipliedAlpha:true). The framework also sets this per draw, but we
+        // keep our own state consistent.
+        gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+
+        // Hiyori uses blend modes (Cubism 5.3 render-target path). The SDK pools
+        // offscreen render textures and expects a per-frame reset, exactly like
+        // LAppLive2DManager.onUpdate(). Without this the blend/RT composite reads
+        // stale targets and the result lands in a corner instead of on screen.
+        const offscreen = CubismWebGLOffscreenManager.getInstance();
+        offscreen.beginFrameProcess(gl);
+
+        // Per-frame order mirrors the SDK's LAppModel.update():
+        //   loadParameters -> motion -> saveParameters -> effects -> physics -> pose -> update
+        model.loadParameters();
+
+        let motionUpdated = false;
+        if (motionManager) {
+          if (motionManager.isFinished()) {
+            startRandomMotion('Idle', P_IDLE);
+          } else {
+            motionUpdated = motionManager.updateMotion(model, dt);
+          }
+        }
+        // saveParameters captures the motion result as this frame's base, so the
+        // additive effects below (and next frame's loadParameters) don't accumulate.
+        model.saveParameters();
+
+        // Blink only when no motion is driving eye params.
+        if (!motionUpdated && eyeBlink) eyeBlink.updateParameters(model, dt);
+        if (look) look.updateParameters(model, dragX, dragY);
+        if (breath) breath.updateParameters(model, dt);
+        if (physics) physics.evaluate(model, dt);
+        if (pose) pose.updateParameters(model, dt);
+
+        model.update();
+
+        // Live2D drawable vertices are already centered on the origin in this
+        // model (they span roughly [-0.2, 0.22] x [-0.67, 0.60]) and its X/Y model
+        // units are square. Clip [-1,1] maps to the w x h pixel viewport, so to keep
+        // the model's proportions we fit its height to [-1,1] (sy) and scale X by
+        // height/width (sx) — the same projection.scale(h/w, 1.0) the SDK sample uses.
+        // Getting sx/sy the wrong way round squashes the model (the squat/flat-face bug).
+        const ch = model.getCanvasHeight();
+        const pressScale = 1 - PRESS_SQUASH * pressPulse; // dips on click, springs to 1
+        // Model vertices are centered on the origin, so scaling about the origin
+        // squishes her in place (center stays pinned at offsetX/offsetY).
+        const sy = (2.0 / ch) * ZOOM * pressScale; // fit model height to clip [-1,1]
+        const sx = sy * (canvas.height / canvas.width); // aspect-correct X
+        const mvp = new Float32Array([
+          sx, 0, 0, 0,
+          0, sy, 0, 0,
+          0, 0, 1, 0,
+          offsetX, offsetY, 0, 1,
+        ]);
+        const proj = new CubismMatrix44();
+        proj.setMatrix(mvp);
+        renderer.setMvpMatrix(proj);
+        // Bind the default framebuffer and sync the renderer's internal model
+        // render-target size to the canvas — the SDK's drawModel relies on these
+        // for its mask setup + final copy passes (LAppModel.doDraw does the same).
+        renderer.setRenderState(null, [0, 0, canvas.width, canvas.height]);
+        renderer.drawModel('./framework/shaders/');
+        offscreen.endFrameProcess(gl);
+        offscreen.releaseStaleRenderTextures(gl);
+      } catch (err) {
+        // Never let a single bad frame kill the rAF chain (requestAnimationFrame
+        // is already scheduled at the top of loop()).
+        console.error('[LIVE2D] loop error', err);
+      }
+    }
+
+    init();
+
+  </script>
+</body>
+</html>
