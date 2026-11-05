@@ -3,42 +3,142 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Live2D Cubism Web - Real SDK Example</title>
+  <title>Live2D Cubism Web - Hu Tao</title>
+
+  <!-- The Cubism framework is 41 ES modules, and a browser only discovers the deep
+       ones after the files that import them have arrived — that waterfall alone was
+       ~1s of the load. These hints fetch the whole closure with the document instead.
+       Keep in sync with what live2d/loadModel.js + live2d/companions.js import; an
+       extra or missing entry costs a wasted or late request, never correctness. -->
+  <link rel="modulepreload" href="./framework/dist/live2dcubismframework.js" />
+  <link rel="modulepreload" href="./framework/dist/cubismdefaultparameterid.js" />
+  <link rel="modulepreload" href="./framework/dist/cubismframeworkconfig.js" />
+  <link rel="modulepreload" href="./framework/dist/cubismmodelsettingjson.js" />
+  <link rel="modulepreload" href="./framework/dist/icubismmodelsetting.js" />
+  <link rel="modulepreload" href="./framework/dist/effect/cubismbreath.js" />
+  <link rel="modulepreload" href="./framework/dist/effect/cubismeyeblink.js" />
+  <link rel="modulepreload" href="./framework/dist/effect/cubismlook.js" />
+  <link rel="modulepreload" href="./framework/dist/effect/cubismpose.js" />
+  <link rel="modulepreload" href="./framework/dist/id/cubismid.js" />
+  <link rel="modulepreload" href="./framework/dist/id/cubismidmanager.js" />
+  <link rel="modulepreload" href="./framework/dist/math/cubismmath.js" />
+  <link rel="modulepreload" href="./framework/dist/math/cubismmatrix44.js" />
+  <link rel="modulepreload" href="./framework/dist/math/cubismvector2.js" />
+  <link rel="modulepreload" href="./framework/dist/model/cubismmoc.js" />
+  <link rel="modulepreload" href="./framework/dist/model/cubismmodel.js" />
+  <link rel="modulepreload" href="./framework/dist/model/cubismmodelmultiplyandscreencolor.js" />
+  <link rel="modulepreload" href="./framework/dist/motion/acubismmotion.js" />
+  <link rel="modulepreload" href="./framework/dist/motion/cubismexpressionmotion.js" />
+  <link rel="modulepreload" href="./framework/dist/motion/cubismexpressionmotionmanager.js" />
+  <link rel="modulepreload" href="./framework/dist/motion/cubismmotion.js" />
+  <link rel="modulepreload" href="./framework/dist/motion/cubismmotioninternal.js" />
+  <link rel="modulepreload" href="./framework/dist/motion/cubismmotionjson.js" />
+  <link rel="modulepreload" href="./framework/dist/motion/cubismmotionmanager.js" />
+  <link rel="modulepreload" href="./framework/dist/motion/cubismmotionqueueentry.js" />
+  <link rel="modulepreload" href="./framework/dist/motion/cubismmotionqueuemanager.js" />
+  <link rel="modulepreload" href="./framework/dist/physics/cubismphysics.js" />
+  <link rel="modulepreload" href="./framework/dist/physics/cubismphysicsinternal.js" />
+  <link rel="modulepreload" href="./framework/dist/physics/cubismphysicsjson.js" />
+  <link rel="modulepreload" href="./framework/dist/rendering/cubismclippingmanager.js" />
+  <link rel="modulepreload" href="./framework/dist/rendering/cubismoffscreenmanager.js" />
+  <link rel="modulepreload" href="./framework/dist/rendering/cubismoffscreenrendertarget_webgl.js" />
+  <link rel="modulepreload" href="./framework/dist/rendering/cubismrenderer.js" />
+  <link rel="modulepreload" href="./framework/dist/rendering/cubismrenderer_webgl.js" />
+  <link rel="modulepreload" href="./framework/dist/rendering/cubismrendertarget_webgl.js" />
+  <link rel="modulepreload" href="./framework/dist/rendering/cubismshader_webgl.js" />
+  <link rel="modulepreload" href="./framework/dist/type/csmrectf.js" />
+  <link rel="modulepreload" href="./framework/dist/utils/cubismarrayutils.js" />
+  <link rel="modulepreload" href="./framework/dist/utils/cubismdebug.js" />
+  <link rel="modulepreload" href="./framework/dist/utils/cubismjson.js" />
+  <link rel="modulepreload" href="./framework/dist/utils/cubismjsonextension.js" />
+
+  <!-- Start the model downloading and decoding now. This needs only the manifest
+       (plain data), so the .moc3 and the textures transfer — and the textures become
+       bitmaps — while the module graph above is still arriving, instead of after it.
+       live2d/assets.js keys the work by the URL each model declares, so the loader
+       reuses it rather than starting a second copy, whichever finishes first. -->
+  <script type="module">
+    import { prefetch } from './live2d/assets.js';
+    import { resolveModel, DEFAULT_MODEL } from './models/manifest.js';
+    prefetch(resolveModel(new URLSearchParams(location.search).get('model') || DEFAULT_MODEL));
+  </script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body {
-      width: 100%; height: 100%;
-      background: #0b1120; color: #f8fafc;
-      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-      overflow: hidden;
-    }
-    #stage {
-      width: 100vw; height: 100vh;
-      display: flex; align-items: center; justify-content: center;
-      position: relative;
-    }
-    canvas { display: block; position: absolute; inset: 0; width: 100vw; height: 100vh; }
-    #loader {
-      position: absolute; inset: 0; background: #0b1120;
+    html, body { width: 100%; height: 100%; background: #0b1120; color: #f8fafc;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
+    #stage { width: 100vw; height: 100vh; display: flex; align-items: center;
+      justify-content: center; position: relative; }
+    canvas { display: block; max-width: 100vw; max-height: 100vh; }
+    #loader { position: absolute; inset: 0; background: #0b1120;
       display: flex; flex-direction: column; align-items: center; justify-content: center;
-      z-index: 50; transition: opacity 0.3s ease;
-    }
+      z-index: 50; transition: opacity 0.3s ease; }
     #loader.hidden { opacity: 0; pointer-events: none; }
-    .spinner {
-      width: 40px; height: 40px; border: 4px solid #1e293b;
-      border-top-color: #38bdf8; border-radius: 50%;
-      animation: spin 0.8s linear infinite; margin-bottom: 1rem;
-    }
+    .spinner { width: 40px; height: 40px; border: 4px solid #1e293b;
+      border-top-color: #38bdf8; border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 1rem; }
     @keyframes spin { to { transform: rotate(360deg); } }
     .progress-bar { width: 320px; height: 6px; background: #1e293b; border-radius: 3px; overflow: hidden; margin-bottom: 0.5rem; }
     .progress-fill { width: 0%; height: 100%; background: #38bdf8; transition: width 0.1s ease; }
     .load-text { font-size: 0.9rem; color: #94a3b8; margin-bottom: 0.25rem; min-height: 1.2rem; text-align: center; }
     .load-percent { font-size: 0.8rem; color: #64748b; }
     .load-error { color: #f87171; font-size: 0.85rem; margin-top: 0.75rem; display: none; text-align: center; padding: 0 1rem; }
-    .hint {
-      position: absolute; bottom: 1rem; left: 50%; transform: translateX(-50%);
-      font-size: 0.8rem; color: #64748b; pointer-events: none; z-index: 5;
+    .hint { position: absolute; bottom: 1rem; left: 50%; transform: translateX(-50%);
+      font-size: 0.8rem; color: #64748b; pointer-events: none; z-index: 5; }
+    .signup-card {
+      position: absolute; left: 2rem; top: 50%; transform: translateY(-50%);
+      width: 260px; z-index: 6;
+      display: flex; flex-direction: column; gap: 0.75rem;
+      padding: 1.25rem; border-radius: 14px;
+      background: rgba(15, 23, 42, 0.55);
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
     }
+    .signup-card h2 { font-size: 1rem; font-weight: 600; color: #f8fafc; }
+    .signup-card p.sub { font-size: 0.75rem; color: #94a3b8; margin-top: -0.4rem; }
+    .signup-card label { font-size: 0.7rem; color: #94a3b8; display: block; margin-bottom: 0.2rem; }
+    .signup-card input {
+      width: 100%; padding: 0.5rem 0.65rem; font-size: 0.85rem;
+      color: #f8fafc; background: rgba(30, 41, 59, 0.7);
+      border: 1px solid rgba(148, 163, 184, 0.25); border-radius: 8px; outline: none;
+    }
+    .signup-card input:focus { border-color: #38bdf8; }
+    .signup-card button {
+      margin-top: 0.25rem; padding: 0.55rem; font-size: 0.85rem; font-weight: 600;
+      color: #0b1120; background: #38bdf8; border: none; border-radius: 8px; cursor: pointer;
+    }
+    .signup-card button:hover { background: #7dd3fc; }
+    .signup-msg { font-size: 0.72rem; color: #4ade80; min-height: 1rem; }
+    .landmark { position: absolute; z-index: 6; }
+    .landmark a { color: #e2e8f0; text-decoration: none; transition: color 0.15s ease; }
+    .landmark a:hover, .landmark a:focus { color: #38bdf8; }
+    .faq {
+      right: 2rem; top: 50%; transform: translateY(-50%); width: 210px;
+      display: flex; flex-direction: column; gap: 0.5rem; padding: 1rem 1.1rem;
+      border-radius: 14px; font-size: 0.82rem;
+      background: rgba(15, 23, 42, 0.55); border: 1px solid rgba(148, 163, 184, 0.25);
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    }
+    .faq h2 { font-size: 0.95rem; color: #f8fafc; margin-bottom: 0.1rem; }
+    .guide-console {
+      position: absolute; bottom: 1.25rem; left: 2rem;
+      z-index: 7; display: flex; align-items: center; gap: 0.4rem;
+      padding: 0.5rem; border-radius: 12px;
+      background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(148, 163, 184, 0.25);
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    }
+    .guide-console input {
+      width: 200px; padding: 0.45rem 0.6rem; font-size: 0.82rem; color: #f8fafc;
+      background: rgba(30, 41, 59, 0.8); border: 1px solid rgba(148, 163, 184, 0.25);
+      border-radius: 8px; outline: none;
+    }
+    .guide-console input:focus { border-color: #38bdf8; }
+    .guide-console button {
+      padding: 0.45rem 0.6rem; font-size: 0.78rem; color: #e2e8f0; cursor: pointer;
+      background: #1e293b; border: 1px solid rgba(148, 163, 184, 0.25); border-radius: 8px;
+    }
+    .guide-console button:hover { background: #334155; color: #38bdf8; }
+    #guideGo { background: #38bdf8; color: #0b1120; font-weight: 600; border-color: #38bdf8; }
+    .guide-status { position: absolute; bottom: calc(100% + 0.4rem); left: 50%; transform: translateX(-50%); white-space: nowrap; font-size: 0.72rem; color: #7dd3fc; min-height: 1rem; }
   </style>
 </head>
 <body>
@@ -46,60 +146,109 @@
   <div id="stage">
     <canvas id="glcanvas" width="800" height="600"></canvas>
 
+    <form id="signup" class="signup-card">
+      <h2>Create account</h2>
+      <p class="sub">Demo form - nothing is sent.</p>
+      <div>
+        <label for="su-name">Name</label>
+        <input id="su-name" name="name" type="text" autocomplete="name" placeholder="Ada Lovelace" required>
+      </div>
+      <div>
+        <label for="su-email">Email</label>
+        <input id="su-email" name="email" type="email" autocomplete="email" placeholder="you@example.com" required>
+      </div>
+      <div>
+        <label for="su-pass">Password</label>
+        <input id="su-pass" name="password" type="password" autocomplete="new-password" placeholder="••••••••" required>
+      </div>
+      <button type="submit">Sign up</button>
+      <p id="signupMsg" class="signup-msg"></p>
+    </form>
+
+    <!-- A named place for the guide to point at ("where is faq?"). -->
+    <section id="faq" class="landmark faq" aria-label="Frequently asked questions" data-guide-alias="help support questions">
+      <h2>FAQ</h2>
+      <a href="#faq1">How does this demo work?</a>
+      <a href="#faq2">Is my data sent anywhere?</a>
+    </section>
+
+    <!-- Guide command console: natural-language commands ("where is faq?", "next").
+         data-guide-exclude keeps the guide from pointing at its own controls. -->
+    <div id="guideConsole" class="guide-console" data-guide-exclude>
+      <input id="guideBox" type="text" aria-label="Guide command" placeholder="Try: where is the FAQ?" autocomplete="off">
+      <button id="guideGo" type="button">Go</button>
+      <button id="guidePrev" type="button" title="Previous element">&#9664;</button>
+      <button id="guideNext" type="button" title="Next element">&#9654;</button>
+      <button id="guideAuto" type="button">Auto-cycle</button>
+      <p id="guideStatus" class="guide-status"></p>
+    </div>
+
     <div id="loader">
       <div class="spinner"></div>
-      <div class="load-text" id="loadText">Loading modules...</div>
+      <div class="load-text" id="loadText">Loading Hu Tao...</div>
       <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
       <div class="load-percent" id="loadPercent">0%</div>
       <div class="load-error" id="loadError"></div>
     </div>
 
-    <div class="hint">Move your mouse - the model follows your cursor</div>
+    <div class="hint">Move your mouse - the model follows your cursor &nbsp;·&nbsp; hold click to squash her &nbsp;·&nbsp; she changes expression on her own &nbsp;·&nbsp; type in the box: &ldquo;where is faq?&rdquo;</div>
   </div>
 
   <!-- 1. Cubism Core -->
   <script src="./core/live2dcubismcore.js"></script>
 
-  <!-- 2. CubismWebFramework modules -->
-  <script type="module">
-    import {
-      CubismFramework, Option, LogLevel,
-    } from './framework/dist/live2dcubismframework.js';
+  <!-- Classic script: opened straight from disk the ES modules and fetch() of the
+       model assets are blocked (CORS, origin null), so say how to open it right.
+       The app module clears this note if it does manage to start. -->
+  <script>
+    if (location.protocol === 'file:') {
+      window.__fileProtocolWarning = true;
+      var t = document.getElementById('loadText');
+      if (t) {
+        t.textContent = 'Serve this over HTTP - double-click start.bat, or open http://127.0.0.1:8000/index.html';
+        t.style.color = '#f87171';
+      }
+      var s = document.querySelector('#loader .spinner');
+      if (s) s.style.display = 'none';
+    }
+  </script>
 
-    import { CubismModelSettingJson } from './framework/dist/cubismmodelsettingjson.js';
-    import { CubismMoc } from './framework/dist/model/cubismmoc.js';
-    import { CubismRenderer_WebGL } from './framework/dist/rendering/cubismrenderer_webgl.js';
+  <!-- 2. App module. Model bring-up, companions and the point rig are generic
+       modules (./live2d/*); which models load is configured in ./models/manifest.js. -->
+  <script type="module">
+    import { CubismFramework, Option, LogLevel } from './framework/dist/live2dcubismframework.js';
     import { CubismWebGLOffscreenManager } from './framework/dist/rendering/cubismoffscreenmanager.js';
     import { CubismMatrix44 } from './framework/dist/math/cubismmatrix44.js';
-    import { CubismDefaultParameterId } from './framework/dist/cubismdefaultparameterid.js';
-    import { CubismBreath } from './framework/dist/effect/cubismbreath.js';
-    import { CubismEyeBlink } from './framework/dist/effect/cubismeyeblink.js';
-    import { CubismLook } from './framework/dist/effect/cubismlook.js';
-    import { BreathParameterData } from './framework/dist/effect/cubismbreath.js';
-    import { LookParameterData } from './framework/dist/effect/cubismlook.js';
-    import { CubismPose } from './framework/dist/effect/cubismpose.js';
-    import { CubismPhysics } from './framework/dist/physics/cubismphysics.js';
-    import { CubismMotion } from './framework/dist/motion/cubismmotion.js';
-    import { CubismMotionManager } from './framework/dist/motion/cubismmotionmanager.js';
+    import { createLive2dGuideBridge } from './guide/live2dBridge.js';
+    import { loadModel } from './live2d/loadModel.js';
+    import { createPointRig } from './live2d/pointRig.js';
+    import { detectHeadAnchor } from './live2d/headAnchor.js';
+    import { loadCompanions } from './live2d/companions.js';
+    import { resolveModel, DEFAULT_MODEL } from './models/manifest.js';
 
-    // ========================================================================
-    // DOM
-    // ========================================================================
     const canvas = document.getElementById('glcanvas');
-    // antialias:true enables MSAA on the default framebuffer, which smooths the
-    // model's silhouette edges (the jaggies you're seeing).
+    // The file:// warning (see the classic script above) only applies when the
+    // modules failed to load - this code running means they did.
+    if (window.__fileProtocolWarning) {
+      window.__fileProtocolWarning = false;
+      const lt = document.getElementById('loadText');
+      if (lt) { lt.textContent = 'Loading Hu Tao...'; lt.style.color = ''; }
+      const sp = document.querySelector('#loader .spinner');
+      if (sp) sp.style.display = '';
+    }
+    // antialias:true enables MSAA (silhouette smoothing); the textures are uploaded
+    // premultiplied, so the context must be premultipliedAlpha:true to match.
     const glAttrs = { antialias: true, alpha: true, premultipliedAlpha: true };
     const gl = canvas.getContext('webgl', glAttrs) || canvas.getContext('experimental-webgl', glAttrs);
     if (!gl) throw new Error('WebGL not supported');
 
-    // Fill the viewport and render at device resolution; ZOOM enlarges the model
-    // within the frame (Hiyori's canvas has built-in margin, so > 1 tightens it).
     const DPR = window.devicePixelRatio || 1;
-    const ZOOM = 1.15;
+    // ZOOM enlarges the model within the frame; the fit below is measured from the
+    // art's real bounds, so nothing important gets clipped.
+    const ZOOM = 1.0;
     function resizeCanvas() {
       canvas.width = Math.max(1, Math.floor(window.innerWidth * DPR));
       canvas.height = Math.max(1, Math.floor(window.innerHeight * DPR));
-      gl.viewport(0, 0, canvas.width, canvas.height);
     }
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
@@ -116,467 +265,431 @@
       progressFillEl.style.width = Math.round(pct) + '%';
       console.log('[LIVE2D]', text);
     }
-
     function showError(msg) {
       loadErrorEl.textContent = msg;
       loadErrorEl.style.display = 'block';
       console.error('[ERROR]', msg);
     }
 
-    // ========================================================================
-    // State
-    // ========================================================================
-    let model, renderer, setting;
-    let eyeBlink, breath, look, physics, pose;
-    let motionManager, motionGroups = {};
-    // Motion priorities (match the Cubism sample: idle < normal < force).
-    const P_IDLE = 1, P_NORMAL = 2, P_FORCE = 3;
-    let userTimeSeconds = 0, lastTime = 0;
-    // MOUSE_SENSITIVITY multiplies cursor offset so the head reaches full turn with
-    // less mouse travel; LOOK_SMOOTH controls how fast it eases toward the cursor
-    // (higher = snappier). Both are tunable to taste.
-    const MOUSE_SENSITIVITY = 2.0;
-    const LOOK_SMOOTH = 12.0;
-    // mouseX/mouseY = raw target from cursor; dragX/dragY = smoothed value fed to CubismLook.
-    let mouseX = 0, mouseY = 0, dragX = 0, dragY = 0;
-    // Whole-model pan (in clip space, [-1,1]) driven by dragging with the pointer.
-    let offsetX = 0, offsetY = 0;
-    let isDragging = false, dragStartX = 0, dragStartY = 0, dragStartOffsetX = 0, dragStartOffsetY = 0, dragMoved = 0;
+    let model, renderer, setting, physics, eyeBlink, breath;
+    let motionManager = null, motionGroups = null;
+    let pointRig = null, companions = null, fit = null, hostMvpArray = null;
+    let expressionManager = null, expressionList = [];
+    let headAnchor = null;
+    let activeExpression = null;
+    let lastTime = 0;
+
     // Press feedback: the model holds a squash (scale dip) while the pointer is
-    // pressed and springs back only on release. pressPulse eases toward 1 while
-    // held, toward 0 when released.
+    // pressed and springs back to full size only on release.
     const PRESS_SQUASH = 0.08;   // how much it shrinks while held (8%)
     const PRESS_SPRING = 12.0;   // how fast it eases in/out (higher = snappier)
     let pressPulse = 0, pressHeld = false;
 
-    // ========================================================================
-    // Fetch helpers
-    // ========================================================================
-    async function fetchAB(url) {
-      const r = await fetch(url);
-      if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + url);
-      return r.arrayBuffer();
-    }
-    async function fetchBlob(url) {
-      const r = await fetch(url);
-      if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + url);
-      return r.blob();
-    }
-    async function fetchText(url) {
-      const r = await fetch(url);
-      if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + url);
-      return r.text();
+    // Expressions are picked at random instead of through a menu, so the model
+    // always has something moving. Every RANDOM_EXPR_MIN..MAX seconds a random
+    // clip is shown; the SDK crossfades it with the previous one.
+    const RANDOM_EXPR_MIN = 3.5;      // seconds between expression changes
+    const RANDOM_EXPR_MAX = 9.0;
+    let exprTimer = 2.0;
+
+    // Fallback head position (fraction of the art height below its top), used
+    // only if the model's own geometry cannot be measured.
+    const HEAD_TOP_DROP = 0.12;
+
+    // The parameter sweep that teaches her to point is remembered in localStorage
+    // against a fingerprint of the rig, so only the first visit pays for it.
+    // Add ?rigcache=0 to force a fresh measurement.
+    const RIG_CACHE_OFF = new URLSearchParams(location.search).get('rigcache') === '0';
+
+    // How much the ghosts commit to a target the guide is actually pointing at.
+    const GHOST_CLEAR = 0.045;   // clip units of air between a ghost and an element
+    const GHOST_EDGE = 0.9;      // never park one further out than this
+
+    // Where a ghost should sit next to a DOM element: just clear of its outward
+    // edge, level with its middle, so it frames the field instead of covering it.
+    // If the outward side would run off the canvas it takes the other side, and
+    // with no element at all it falls back to the aim point itself.
+    function ghostSpot(el, point) {
+      const base = { x: point.x, y: point.y, strength: 1 };
+      if (!el || !el.isConnected) return base;
+      const b = el.getBoundingClientRect();
+      const cr = canvas.getBoundingClientRect();
+      if (!b.width || !b.height || !cr.width || !cr.height) return base;
+      const cx = (b.left + b.width / 2 - cr.left) / cr.width * 2 - 1;
+      const cy = -((b.top + b.height / 2 - cr.top) / cr.height * 2 - 1);
+      const half = b.width / cr.width + GHOST_CLEAR;   // clip units to the element edge + air
+      const out = cx >= 0 ? 1 : -1;
+      const x = cx + out * half;
+      return Math.abs(x) > GHOST_EDGE
+        ? { x: cx - out * half, y: cy, strength: 1 }
+        : { x, y: cy, strength: 1 };
     }
 
-    // ========================================================================
-    // Init
-    // ========================================================================
+    // MOUSE_SENSITIVITY turns the cursor offset (in clip space, from her head)
+    // into a gaze vector: 1 = the cursor is one full half-canvas away.
+    // GAZE_REACH is that distance in clip units - longer reach = lazier tracking.
+    const GAZE_REACH = 0.6;
+    const MOUSE_SENSITIVITY = 1 / GAZE_REACH;
+    const LOOK_SMOOTH = 12.0;
+    // Gaze math lives in the generic bridge, shared with the guide module.
+    const guide = createLive2dGuideBridge({
+      canvas,
+      sensitivity: MOUSE_SENSITIVITY,
+      smoothing: LOOK_SMOOTH,
+      lookYSign: -1,
+      onGesture: () => {
+        if (!startRandomMotion('TapBody')) startRandomMotion('Idle');
+      },
+    });
+    window.__live2dGuide = guide;
+
+    // Play a random clip from a motion group, if the model ships one.
+    function startRandomMotion(group, priority = 0) {
+      const g = motionGroups && (motionGroups[group] || motionGroups[group.toLowerCase()]);
+      if (!g || !g.length || !motionManager) return false;
+      motionManager.startMotionPriority(g[Math.floor(Math.random() * g.length)], false, priority);
+      return true;
+    }
+
+    // Measure the real drawable bounds once: the declared canvas height can
+    // under-size the art (Hu Tao's hat spilled past it and got clipped).
+    function measureFit(m) {
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      for (let i = 0, n = m.getDrawableCount(); i < n; i++) {
+        // Only visible drawables: pose-hidden alternate parts would inflate the fit.
+        if (!m.getDrawableDynamicFlagIsVisible(i) || m.getDrawableOpacity(i) <= 0) continue;
+        const ps = m.getDrawableVertexPositions(i);
+        if (!ps) continue;
+        for (let j = 0; j < ps.length; j += 2) {
+          const x = ps[j], y = ps[j + 1];
+          if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+          if (x < minX) minX = x; if (x > maxX) maxX = x;
+          if (y < minY) minY = y; if (y > maxY) maxY = y;
+        }
+      }
+      if (!Number.isFinite(minY)) return { bh: m.getCanvasHeight(), cy: 0 };
+      return { bh: maxY - minY, cy: (minY + maxY) / 2 };
+    }
+
+    // Expression clips: the model's own .exp3.json files. One clip shows at a
+    // time - starting a new one fades the previous one out (SDK behaviour).
+    function showExpression(name) {
+      if (!expressionManager || !expressionList.length) return;
+      if (name && activeExpression === name) { clearExpression(); return; }
+      if (!name) { clearExpression(); return; }
+      const e = expressionList.find((x) => x.name === name);
+      if (!e) return;
+      activeExpression = name;
+      expressionManager.startMotion(e.motion, false, 0);
+    }
+
+    function clearExpression() {
+      activeExpression = null;
+      if (expressionManager) expressionManager.stopAllMotions();
+    }
+
+    // Random expression picker, driven from the render loop.
+    function randomExpression() {
+      if (!expressionList.length) return;
+      // Never repeat the current clip - a crossfade to the same one flickers.
+      let e = expressionList[Math.floor(Math.random() * expressionList.length)];
+      if (expressionList.length > 1) {
+        while (e.name === activeExpression) e = expressionList[Math.floor(Math.random() * expressionList.length)];
+      }
+      showExpression(e.name);
+      exprTimer = RANDOM_EXPR_MIN + Math.random() * (RANDOM_EXPR_MAX - RANDOM_EXPR_MIN);
+    }
+
+    // Demo sign-up: acknowledge locally, never transmit.
+    const signupForm = document.getElementById('signup');
+    const signupMsg = document.getElementById('signupMsg');
+    signupForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      signupMsg.textContent = 'Thanks! Account created (demo only - no data is sent).';
+      signupForm.reset();
+    });
+
+    // Drag the whole model: pointer deltas pan her in clip space. A press and
+    // release without real movement counts as a tap.
+    const TAP_THRESHOLD_PX = 6;
+    let isDragging = false, lastPX = 0, lastPY = 0, dragMoved = 0;
+
+    canvas.addEventListener('pointerdown', (e) => {
+      pressHeld = true;
+      isDragging = true;
+      dragMoved = 0;
+      lastPX = e.clientX;
+      lastPY = e.clientY;
+      // Carry her, don't let her re-aim: the gaze is released on pointerup.
+      guide.freezeGaze(true);
+      try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+    });
+
+    canvas.addEventListener('pointermove', (e) => {
+      if (!isDragging || guide.isHeld()) return;
+      const dx = e.clientX - lastPX;
+      const dy = e.clientY - lastPY;
+      lastPX = e.clientX;
+      lastPY = e.clientY;
+      dragMoved += Math.hypot(dx, dy);
+      guide.panByPixels(dx, dy);
+    });
+
+    canvas.addEventListener('pointerup', (e) => {
+      pressHeld = false;
+      guide.freezeGaze(false);
+      if (!isDragging) return;
+      isDragging = false;
+      try { canvas.releasePointerCapture(e.pointerId); } catch (_) {}
+      if (dragMoved < TAP_THRESHOLD_PX) guide.gesture();
+    });
+
+    // If the pointer is cancelled (e.g. lost capture), also release the squash.
+    canvas.addEventListener('pointercancel', () => { pressHeld = false; isDragging = false; guide.freezeGaze(false); });
+    window.addEventListener('blur', () => { pressHeld = false; isDragging = false; guide.freezeGaze(false); });
+
+    window.addEventListener('keydown', (e) => {
+      if (!expressionList.length || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key >= '1' && e.key <= '9') {
+        const idx = Number(e.key) - 1;
+        if (idx < expressionList.length) { showExpression(expressionList[idx].name); exprTimer = RANDOM_EXPR_MAX; e.preventDefault(); }
+      } else if (e.key === '0') {
+        clearExpression(); exprTimer = RANDOM_EXPR_MAX; e.preventDefault();
+      }
+    });
+
+    // Load-phase clock: bring-up reports where its time actually went instead of
+    // being guessed at.
+    const bootTime = performance.now();
+    let tPhaseStart = bootTime;
+    const phaseLog = [];
+    function phase(name) {
+      const now = performance.now();
+      phaseLog.push(name + ' ' + Math.round(now - tPhaseStart) + 'ms');
+      tPhaseStart = now;
+    }
+
+    // The pointing rig is measured AFTER she is on screen (see finishSetup), and
+    // each animation frame is handed back between parameter probes so calibrating
+    // her never freezes her. The timer is the escape hatch: a background tab
+    // never paints, and setup must not wait for one.
+    const nextFrame = () => new Promise((r) => {
+      const id = setTimeout(r, 120);
+      requestAnimationFrame(() => { clearTimeout(id); r(); });
+    });
+
     async function init() {
       try {
         setProgress('Initializing CubismFramework...', 5);
         const option = new Option();
         option.logFunction = (m) => console.log('[Cubism]', m);
         option.loggingLevel = LogLevel.LogLevel_Verbose;
-
         CubismFramework.startUp(option);
         CubismFramework.initialize();
-        console.log('[LIVE2D] Framework initialized');
+        phase('cubism');
 
-        const MODEL_DIR = './models/hiyori/';
-        const MODEL_JSON = MODEL_DIR + 'Hiyori.model3.json';
+        // Model is picked from the manifest; switch at runtime with ?model=id.
+        const chosen = resolveModel(new URLSearchParams(location.search).get('model') || DEFAULT_MODEL);
+        setProgress('Loading ' + chosen.label + '...', 8);
+        const handles = await loadModel({
+          model3Url: chosen.model3,
+          gl,
+          expressions: chosen.expressions || [],
+          onProgress: (t, p) => setProgress(t, p),
+          onLog: (m) => console.log(m),
+        });
+        ({ setting, model, renderer, eyeBlink, breath, physics, motionManager, motionGroups } = handles);
+        if (handles.failedAssets > 0) showError(handles.failedAssets + ' asset(s) failed - check console');
+        guide.model = model;
 
-        setProgress('Loading model3.json...', 10);
-        const m3 = await fetchAB(MODEL_JSON);
-        setting = new CubismModelSettingJson(m3, m3.byteLength);
-        console.log('[LIVE2D] model3.json loaded');
+        // Expressions (Hu Tao ships no motion clips, only .exp3.json faces).
+        expressionManager = handles.expressionManager;
+        expressionList = handles.expressionList || [];
+        phase('model + textures');
 
-        // Build asset list
-        const assetList = [];
-        const mocFileName = setting.getModelFileName();
-        console.log('[LIVE2D] moc file:', mocFileName);
-        assetList.push({ name: mocFileName, url: MODEL_DIR + mocFileName, type: 'ab' });
-        for (let i = 0; i < setting.getTextureCount(); i++) {
-          const tn = setting.getTextureFileName(i);
-          assetList.push({ name: tn, url: MODEL_DIR + tn, type: 'blob' });
-        }
-        // Optional physics (Hiyori has hair/sway) — load if referenced.
-        const physicsFileName = setting.getPhysicsFileName();
-        if (physicsFileName) {
-          assetList.push({ name: physicsFileName, url: MODEL_DIR + physicsFileName, type: 'ab' });
-        }
-        // Pose (toggles exclusive parts, e.g. Hiyori's ArmA vs ArmB — fixes "double hands").
-        const poseFileName = setting.getPoseFileName();
-        if (poseFileName) {
-          assetList.push({ name: poseFileName, url: MODEL_DIR + poseFileName, type: 'ab' });
-        }
-        // Motions: enumerate every group and load each motion3.json.
-        const motionRefs = []; // [{group, index, name}]
-        for (let g = 0; g < setting.getMotionGroupCount(); g++) {
-          const groupName = setting.getMotionGroupName(g);
-          for (let i = 0; i < setting.getMotionCount(groupName); i++) {
-            const mn = setting.getMotionFileName(groupName, i);
-            motionRefs.push({ group: groupName, index: i, name: mn });
-            assetList.push({ name: mn, url: MODEL_DIR + mn, type: 'ab' });
-          }
-        }
-        const shaders = [
-          'vertshadersrc.vert','vertshadersrcmasked.vert','vertshadersrcsetupmask.vert',
-          'fragshadersrcsetupmask.frag','fragshadersrcpremultipliedalpha.frag',
-          'fragshadersrcmaskpremultipliedalpha.frag','fragshadersrcmaskinvertedpremultipliedalpha.frag',
-          'vertshadersrccopy.vert','fragshadersrccopy.frag','fragshadersrccolorblend.frag',
-          'fragshadersrcalphablend.frag','vertshadersrcblend.vert','fragshadersrcpremultipliedalphablend.frag',
-        ];
-        for (const s of shaders) assetList.push({ name: s, url: './framework/shaders/' + s, type: 'text' });
+        model.update();
+        fit = measureFit(model);
+        console.log('[LIVE2D] Fit: art height', fit.bh.toFixed(2), 'units, centre y', fit.cy.toFixed(2),
+          '(canvas', model.getCanvasHeight() + ')');
 
-        setProgress('Fetching ' + assetList.length + ' assets...', 15);
-
-        const results = await Promise.allSettled(assetList.map(async (a) => {
-          if (a.type === 'ab') return { name: a.name, data: await fetchAB(a.url) };
-          if (a.type === 'blob') return { name: a.name, data: await fetchBlob(a.url) };
-          if (a.type === 'text') return { name: a.name, data: await fetchText(a.url) };
-        }));
-
-        const assetMap = {};
-        let failed = 0;
-        for (const r of results) {
-          if (r.status === 'fulfilled') {
-            assetMap[r.value.name] = r.value.data;
-          } else {
-            failed++;
-            console.warn('[LIVE2D] Failed to load', r.reason);
-          }
-        }
-        if (failed > 0) showError(failed + ' asset(s) failed - check console');
-        console.log('[LIVE2D] All assets fetched');
-
-        // Create model
-        setProgress('Creating Live2D model...', 90);
-        console.log('[LIVE2D] Creating Moc from buffer...');
-        const moc = CubismMoc.create(assetMap[mocFileName]);
-        console.log('[LIVE2D] Moc created:', typeof moc);
-
-        console.log('[LIVE2D] Creating model from Moc...');
-        model = moc.createModel();
-        console.log('[LIVE2D] Model created:', typeof model);
-
-        // Renderer
-        console.log('[LIVE2D] Creating renderer...');
-        renderer = new CubismRenderer_WebGL();
-
-        // initialize(model) must run before startUp: startUp reads model state
-        // (isUsingMasking / isBlendModeEnabled) to size its mask buffers.
-        console.log('[LIVE2D] Initializing renderer with model...');
-        renderer.initialize(model);
-        console.log('[LIVE2D] Renderer initialized (model bound)');
-
-        // Mask quality: use the SDK's own default mask path. Its fragment shader
-        // (fragshadersrcsetupmask.frag) already samples the mask with a bilinear +
-        // soft-threshold step, which is Live2D's built-in edge smoothing. The
-        // high-precision redraw path is expensive and unnecessary for this scene;
-        // the default 1024 mask buffer is plenty and combined with the context's
-        // MSAA (antialias:true) yields clean edges.
-        renderer.setClippingMaskBufferSize(1024);
-        renderer.setIsPremultipliedAlpha(true);
-        console.log('[LIVE2D] Edge smoothing via SDK mask + MSAA; PMA on');
-
-        console.log('[LIVE2D] Starting up renderer with GL...');
-        renderer.startUp(gl);
-        console.log('[LIVE2D] Renderer started up');
-
-        // Crisp texture detail at oblique angles (renderer applies this per-texture
-        // during drawModel via the anisotropic extension it detects in startUp).
-        const anisoExt = gl.getExtension('EXT_texture_filter_anisotropic')
-          || gl.getExtension('WEBKIT_EXT_texture_filter_anisotropic')
-          || gl.getExtension('MOZ_EXT_texture_filter_anisotropic');
-        if (anisoExt) {
-          const maxAniso = gl.getParameter(anisoExt.MAX_TEXTURE_MAX_ANISOTROPY_EXT);
-          renderer.setAnisotropy(maxAniso);
-          console.log('[LIVE2D] Anisotropic filtering:', maxAniso);
+        // Where is her head? The gaze pivots on it instead of on the middle of
+        // the screen, so she looks AT the cursor rather than past it. Measured
+        // from the model's own geometry, so it works for any model.
+        headAnchor = detectHeadAnchor(model);
+        if (headAnchor) {
+          console.log('[LIVE2D] Head anchor:', headAnchor.x.toFixed(3), headAnchor.y.toFixed(3), '(model units)');
+        } else {
+          headAnchor = { x: 0, y: fit.cy + fit.bh * (0.5 - HEAD_TOP_DROP) };
+          console.log('[LIVE2D] Head anchor: fallback (top of art)');
         }
 
-        // Shaders are loaded lazily by drawModel/loadShaders; ./framework/shaders/
-        // overrides the SDK's default relative path ('../../Framework/Shaders/WebGL/').
-        console.log('[LIVE2D] Preloading shaders...');
-        renderer.loadShaders('./framework/shaders/');
-
-        // Textures
-        console.log('[LIVE2D] Loading textures...');
-        for (let i = 0; i < setting.getTextureCount(); i++) {
-          const tn = setting.getTextureFileName(i);
-          console.log('[LIVE2D] Texture', i, ':', tn);
-          const tex = await createTextureFromBlob(gl, assetMap[tn], true);
-          renderer.bindTexture(i, tex);
-          console.log('[LIVE2D] Texture', i, 'bound');
-        }
-
-        // Parameter IDs
-        const idm = CubismFramework.getIdManager();
-        const idParamAngleX = idm.getId(CubismDefaultParameterId.ParamAngleX);
-        const idParamAngleY = idm.getId(CubismDefaultParameterId.ParamAngleY);
-        const idParamAngleZ = idm.getId(CubismDefaultParameterId.ParamAngleZ);
-        const idParamEyeBallX = idm.getId(CubismDefaultParameterId.ParamEyeBallX);
-        const idParamEyeBallY = idm.getId(CubismDefaultParameterId.ParamEyeBallY);
-
-        // EyeBlink
-        eyeBlink = CubismEyeBlink.create(setting);
-
-        // Breath
-        breath = CubismBreath.create();
-        breath.setParameters([
-          new BreathParameterData(idParamAngleX, 0, 15, 6.5345, 0.5),
-          new BreathParameterData(idParamAngleY, 0, 8, 3.5345, 0.5),
-          new BreathParameterData(idParamAngleZ, 0, 10, 5.5345, 0.5),
-        ]);
-
-        // Look
-        look = CubismLook.create();
-        look.setParameters([
-          new LookParameterData(idParamAngleX, 30, 0, 0),
-          new LookParameterData(idParamAngleY, 0, 30, 0),
-          new LookParameterData(idParamAngleZ, 0, 0, -30),
-          new LookParameterData(idParamEyeBallX, 1, 0, 0),
-          new LookParameterData(idParamEyeBallY, 0, 1, 0),
-        ]);
-
-        // Physics (hair / cloth sway)
-        if (physicsFileName && assetMap[physicsFileName]) {
-          const pbuf = assetMap[physicsFileName];
-          physics = CubismPhysics.create(pbuf, pbuf.byteLength);
-          console.log('[LIVE2D] Physics created:', typeof physics);
-        }
-
-        // Pose — drives exclusive part visibility (ArmA vs ArmB).
-        if (poseFileName && assetMap[poseFileName]) {
-          const poseBuf = assetMap[poseFileName];
-          pose = CubismPose.create(poseBuf, poseBuf.byteLength);
-          console.log('[LIVE2D] Pose created:', typeof pose);
-        }
-
-        // Motions — build CubismMotion instances per group and enable cross-fades.
-        // Motions read these id lists during update; leaving them null throws.
-        const eyeBlinkIds = [];
-        for (let i = 0; i < setting.getEyeBlinkParameterCount(); i++) {
-          eyeBlinkIds.push(setting.getEyeBlinkParameterId(i));
-        }
-        const lipSyncIds = [];
-        for (let i = 0; i < setting.getLipSyncParameterCount(); i++) {
-          lipSyncIds.push(setting.getLipSyncParameterId(i));
-        }
-        for (const ref of motionRefs) {
-          const buf = assetMap[ref.name];
-          if (!buf) continue;
-          const motion = CubismMotion.create(buf, buf.byteLength);
-          motion.setEffectIds(eyeBlinkIds, lipSyncIds);
-          const fi = setting.getMotionFadeInTimeValue(ref.group, ref.index);
-          const fo = setting.getMotionFadeOutTimeValue(ref.group, ref.index);
-          if (fi >= 0) motion.setFadeInTime(fi);
-          if (fo >= 0) motion.setFadeOutTime(fo);
-          (motionGroups[ref.group] = motionGroups[ref.group] || []).push(motion);
-        }
-        console.log('[LIVE2D] Motion groups:', Object.keys(motionGroups).map((k) => k + '(' + motionGroups[k].length + ')').join(', '));
-
-        // Motion manager + kick off an idle clip.
-        motionManager = new CubismMotionManager();
-        startRandomMotion('Idle', P_IDLE);
+        // Test/verification hook: lets tooling run a single frame synchronously.
+        window.__live2dDebug = { gl, canvas, frame: loop, CubismMatrix44, get companions() { return companions; }, get model() { return model; },
+          get renderer() { return renderer; }, get fit() { return fit; },
+          get expressions() { return expressionList; },
+          get idManager() { return handles.idManager; },
+          get expression() { return activeExpression; },
+          get headAnchor() { return headAnchor; },
+          get mvp() { return hostMvpArray; },
+          get gazeOrigin() { return guide.originClip(); },
+          get rig() { return pointRig; },
+          get phases() { return phaseLog.slice(); },
+          setExpression(name, on) { if (on) showExpression(name); else clearExpression(); },
+          clearExpressions() { clearExpression(); },
+          get press() { return pressPulse; }, get held() { return pressHeld; } };
 
         setProgress('Ready!', 100);
         loaderEl.classList.add('hidden');
         lastTime = performance.now();
         requestAnimationFrame(loop);
+        phase('loader closed');
 
+        // She is on screen from here. The two expensive extras - the parameter
+        // sweep that makes her point, and her ghosts - are measured in the
+        // background and switch on as they land.
+        finishSetup(chosen, handles);
       } catch (err) {
         console.error('Init failed:', err);
         showError('Error: ' + err.message);
       }
     }
 
-    function createTextureFromBlob(gl, blob, premult) {
-      return new Promise((res, rej) => {
-        const img = new Image();
-        img.onload = () => {
-          const tex = gl.createTexture();
-          gl.bindTexture(gl.TEXTURE_2D, tex);
-          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-          gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, premult ? 1 : 0);
-          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
-          gl.bindTexture(gl.TEXTURE_2D, null);
-          res(tex);
-        };
-        img.onerror = () => rej(new Error('Image decode failed'));
-        img.src = URL.createObjectURL(blob);
-      });
-    }
+    // Background bring-up: worth a second, not worth holding the loader open for.
+    // Nothing here can stop the model from already being alive, so a failure logs
+    // and leaves her breathing rather than breaking the page.
+    async function finishSetup(chosen, handles) {
+      await nextFrame();
+      try {
+        // Full-body pointing (./live2d/pointRig.js): head/eyes/torso sweep the
+        // COMPLETE parameter ranges toward the gaze, on any rig. The physics rig
+        // is passed in so the point rig can tell steerable inputs from
+        // physics-written outputs before it picks what to drive.
+        pointRig = await createPointRig(model, {
+          idManager: handles.idManager, arms: chosen.arms, physics, pace: nextFrame,
+          cacheKey: chosen.model3, cache: !RIG_CACHE_OFF,
+        });
+        console.log('[LIVE2D] Point rig (' + (pointRig.measured ? 'measured now' : 'cached sweep') + '):', pointRig.summary());
+        phase('point rig calibrated');
 
-    // ========================================================================
-    // Motion helpers
-    // ========================================================================
-    function startMotion(group, index, priority) {
-      if (!motionManager) return;
-      const list = motionGroups[group];
-      if (!list || !list[index]) return;
-      if (priority === P_FORCE) {
-        motionManager.setReservePriority(P_FORCE);
-      } else if (!motionManager.reserveMotion(priority)) {
-        return; // a higher/equal-priority motion is already running/reserved
-      }
-      // autoDelete=false: these CubismMotion instances are reused across plays.
-      motionManager.startMotionPriority(list[index], false, priority);
-    }
-
-    function startRandomMotion(group, priority) {
-      const list = motionGroups[group];
-      if (!list || list.length === 0) return;
-      startMotion(group, Math.floor(Math.random() * list.length), priority);
-    }
-
-    // Drag the whole model with the pointer; a press-and-release without real
-    // movement is treated as a tap (plays a body motion, as before).
-    const TAP_THRESHOLD_PX = 6;
-    canvas.addEventListener('pointerdown', (e) => {
-      pressHeld = true; // hold the squash until the pointer is released
-      isDragging = true;
-      dragMoved = 0;
-      dragStartX = e.clientX;
-      dragStartY = e.clientY;
-      dragStartOffsetX = offsetX;
-      dragStartOffsetY = offsetY;
-      canvas.setPointerCapture(e.pointerId);
-    });
-
-    canvas.addEventListener('pointermove', (e) => {
-      if (!isDragging) return;
-      const rect = canvas.getBoundingClientRect();
-      const dx = e.clientX - dragStartX;
-      const dy = e.clientY - dragStartY;
-      dragMoved = Math.max(dragMoved, Math.hypot(dx, dy));
-      // Screen px -> clip space: X spans [-1,1] over width, Y is up so invert.
-      offsetX = dragStartOffsetX + dx * (2 / rect.width);
-      offsetY = dragStartOffsetY - dy * (2 / rect.height);
-    });
-
-    canvas.addEventListener('pointerup', (e) => {
-      pressHeld = false; // release the squash on pointer up
-      if (!isDragging) return;
-      isDragging = false;
-      canvas.releasePointerCapture(e.pointerId);
-      if (dragMoved < TAP_THRESHOLD_PX) {
-        if (motionGroups['TapBody'] && motionGroups['TapBody'].length) {
-          startRandomMotion('TapBody', P_NORMAL);
-        } else {
-          startRandomMotion('Idle', P_NORMAL);
+        // Pinned companion models (./live2d/companions.js): Hu Tao's two ghosts,
+        // anchored in HER model-space units beside the hat, riding her head turns.
+        if (chosen.companions && chosen.companions.length) {
+          companions = await loadCompanions(chosen.companions, {
+            gl, hostModel: model, shadersPath: './framework/shaders/',
+            onLog: (m) => console.log(m),
+          });
+          phase('companions');
         }
+        console.log('[LIVE2D] Everything ready ' + Math.round(performance.now() - bootTime)
+          + 'ms after boot - ' + phaseLog.join(', '));
+      } catch (err) {
+        console.error('[LIVE2D] Background setup failed:', err);
       }
-    });
+    }
 
-    // If the pointer is cancelled (e.g. lost capture), also release the squash.
-    canvas.addEventListener('pointercancel', () => { pressHeld = false; isDragging = false; });
-
-    // Mouse tracking (store raw target, clamped to [-1, 1])
     window.addEventListener('mousemove', (e) => {
-      const rect = canvas.getBoundingClientRect();
-      mouseX = Math.max(-1, Math.min(1, ((e.clientX - rect.left) / rect.width - 0.5) * 2 * MOUSE_SENSITIVITY));
-      mouseY = Math.max(-1, Math.min(1, ((e.clientY - rect.top) / rect.height - 0.5) * 2 * MOUSE_SENSITIVITY));
+      guide.pointerMove(e.clientX, e.clientY);
     });
 
-    // Loop
     function loop(now) {
       requestAnimationFrame(loop);
-      if (!model || !renderer) { return; }
+      if (!model || !renderer) return;
       try {
         const dt = Math.min((now - lastTime) / 1000, 1 / 30);
         lastTime = now;
-        userTimeSeconds += dt;
 
-        // Ease the squash toward the pressed target: stays dipped while held,
-        // springs back to full size only after release.
+        // Fit the REAL art height to clip [-1,1], aspect-correct X, centre the art.
+        // pressPulse dips the scale while the pointer is held on the model.
         const pressTarget = pressHeld ? 1 : 0;
         pressPulse += (pressTarget - pressPulse) * Math.min(1.0, dt * PRESS_SPRING);
+        const pressScale = 1 - PRESS_SQUASH * pressPulse;
+        const sy = (2.0 / fit.bh) * ZOOM * pressScale;
+        const sx = sy * (canvas.height / canvas.width);
+        const { offsetX, offsetY } = guide.state;
 
-        // Smooth the drag toward the cursor so the head/eyes ease instead of snapping.
-        const lerp = Math.min(1.0, dt * LOOK_SMOOTH);
-        dragX += (mouseX - dragX) * lerp;
-        dragY += (mouseY - dragY) * lerp;
+        // The gaze pivots on her HEAD, not on the middle of the screen: the head
+        // sits high in the art and travels with the pan, so the pivot has to
+        // follow it (same transform the MVP applies to the model).
+        guide.setOrigin(
+          headAnchor.x * sx + offsetX,
+          headAnchor.y * sy + offsetY - fit.cy * sy,
+        );
+
+        // Ease the gaze through the bridge; tick() only smooths here (look stays null).
+        guide.tick(dt);
+        const { dragX, dragY } = guide.gaze();
 
         gl.clearColor(0, 0, 0, 0);
         gl.clear(gl.COLOR_BUFFER_BIT);
         gl.enable(gl.BLEND);
-        // Premultiplied-alpha blending (textures are uploaded PMA and the context
-        // is premultipliedAlpha:true). The framework also sets this per draw, but we
-        // keep our own state consistent.
-        gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+        gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA); // premultiplied-alpha blending
 
-        // Hiyori uses blend modes (Cubism 5.3 render-target path). The SDK pools
-        // offscreen render textures and expects a per-frame reset, exactly like
-        // LAppLive2DManager.onUpdate(). Without this the blend/RT composite reads
-        // stale targets and the result lands in a corner instead of on screen.
+        // The SDK pools offscreen render targets for masks/blend modes and expects
+        // a per-frame reset (same as LAppLive2DManager.onUpdate).
         const offscreen = CubismWebGLOffscreenManager.getInstance();
         offscreen.beginFrameProcess(gl);
 
-        // Per-frame order mirrors the SDK's LAppModel.update():
-        //   loadParameters -> motion -> saveParameters -> effects -> physics -> pose -> update
         model.loadParameters();
-
-        let motionUpdated = false;
-        if (motionManager) {
-          if (motionManager.isFinished()) {
-            startRandomMotion('Idle', P_IDLE);
-          } else {
-            motionUpdated = motionManager.updateMotion(model, dt);
+        model.saveParameters();
+        // Idle motion clips, for models that ship them (Hu Tao has none).
+        if (motionManager && motionGroups) {
+          const idle = motionGroups['Idle'] || motionGroups['idle'];
+          if (idle && idle.length) {
+            if (motionManager.isFinished()) startRandomMotion('Idle');
+            motionManager.updateMotion(model, dt);
           }
         }
-        // saveParameters captures the motion result as this frame's base, so the
-        // additive effects below (and next frame's loadParameters) don't accumulate.
-        model.saveParameters();
-
-        // Blink only when no motion is driving eye params.
-        if (!motionUpdated && eyeBlink) eyeBlink.updateParameters(model, dt);
-        if (look) look.updateParameters(model, dragX, dragY);
+        if (eyeBlink) eyeBlink.updateParameters(model, dt);
+        // Sweep the whole body toward the gaze; boosted while the guide holds a
+        // target. Null until the background calibration lands (see finishSetup).
+        if (pointRig) {
+          pointRig.setBoost(guide.isHeld());
+          pointRig.apply(dragX, -dragY);
+        }
         if (breath) breath.updateParameters(model, dt);
         if (physics) physics.evaluate(model, dt);
-        if (pose) pose.updateParameters(model, dt);
-
+        // Expressions last, so a face clip wins over the rig and physics.
+        if (expressionManager) expressionManager.updateMotion(model, dt);
+        // Random expression changes keep the face alive without any UI.
+        if (expressionList.length) {
+          exprTimer -= dt;
+          if (exprTimer <= 0) randomExpression();
+        }
         model.update();
 
-        // Live2D drawable vertices are already centered on the origin in this
-        // model (they span roughly [-0.2, 0.22] x [-0.67, 0.60]) and its X/Y model
-        // units are square. Clip [-1,1] maps to the w x h pixel viewport, so to keep
-        // the model's proportions we fit its height to [-1,1] (sy) and scale X by
-        // height/width (sx) — the same projection.scale(h/w, 1.0) the SDK sample uses.
-        // Getting sx/sy the wrong way round squashes the model (the squat/flat-face bug).
-        const ch = model.getCanvasHeight();
-        const pressScale = 1 - PRESS_SQUASH * pressPulse; // dips on click, springs to 1
-        // Model vertices are centered on the origin, so scaling about the origin
-        // squishes her in place (center stays pinned at offsetX/offsetY).
-        const sy = (2.0 / ch) * ZOOM * pressScale; // fit model height to clip [-1,1]
-        const sx = sy * (canvas.height / canvas.width); // aspect-correct X
-        const mvp = new Float32Array([
+        // The host MVP: art fitted to clip [-1,1], centred, panned, squashed.
+        hostMvpArray = new Float32Array([
           sx, 0, 0, 0,
           0, sy, 0, 0,
           0, 0, 1, 0,
-          offsetX, offsetY, 0, 1,
+          offsetX, offsetY - fit.cy * sy, 0, 1,
         ]);
         const proj = new CubismMatrix44();
-        proj.setMatrix(mvp);
+        proj.setMatrix(hostMvpArray);
         renderer.setMvpMatrix(proj);
-        // Bind the default framebuffer and sync the renderer's internal model
-        // render-target size to the canvas — the SDK's drawModel relies on these
-        // for its mask setup + final copy passes (LAppModel.doDraw does the same).
         renderer.setRenderState(null, [0, 0, canvas.width, canvas.height]);
         renderer.drawModel('./framework/shaders/');
+
+        // Ghosts draw in the same frame pass, positioned relative to the host MVP.
+        // They leave their pin only for a target the guide is actually pointing at,
+        // and ease back onto it as soon as the hold ends.
+        const ghostAim = guide.isHeld()
+          ? ghostSpot(guide.targetElement && guide.targetElement(), guide.curClip())
+          : null;
+        if (companions) companions.updateAndDraw(dt, hostMvpArray, model, ghostAim);
+
         offscreen.endFrameProcess(gl);
         offscreen.releaseStaleRenderTextures(gl);
       } catch (err) {
-        // Never let a single bad frame kill the rAF chain (requestAnimationFrame
-        // is already scheduled at the top of loop()).
+        // Never let one bad frame kill the rAF chain (already scheduled above).
         console.error('[LIVE2D] loop error', err);
       }
     }
 
     init();
-
   </script>
+
+  <!-- 3. UI guide module (activates when the page has navigable landmarks). -->
+  <script type="module" src="./guide/index.js"></script>
 </body>
 </html>

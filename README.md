@@ -38,17 +38,56 @@ live2d-example/
 
 ## Quick start (demo works immediately)
 
-1. Open `index.html` in any modern browser, or serve it with a local server:
+1. Serve the folder over HTTP - `file://` cannot load ES modules or `fetch()`
+   the model, so opening `index.html` directly will not work. Double-click
+   `start.bat`, or:
    ```bash
-   # Python 3
-   python -m http.server 8000
-
-   # Node (npx serve)
-   npx serve .
+   python serve.py              # http://127.0.0.1:8000/
    ```
-2. Visit `http://localhost:8000`.
-3. You'll see the demo character in **DEMO MODE**. Move your mouse over the
-   canvas, click the expression/motion buttons, and watch the parameter panel.
+   `serve.py` is a stdlib static server with the three things this page needs to
+   load fast: HTTP/1.1 keep-alive (one socket instead of ~60), a thread per
+   connection, and revalidation on every file - so a texture you re-encoded is
+   picked up on the next reload instead of being pinned in the browser cache.
+   `python -m http.server 8000` also works, just noticeably slower.
+2. Visit `http://127.0.0.1:8000`.
+3. Move your mouse - she follows your cursor, click to squash her, type in the
+   box to have her point at a part of the page (`where is faq?`).
+
+### Model textures
+
+`tools/make_webp.py` writes a `.webp` next to every texture the manifest references,
+downscaled to what the screen actually shows (Hu Tao: 64 MB of 8192px PNG → 1.1 MB of
+2048px WebP), and `live2d/assets.js` takes the `.webp` when it is there, falling back
+to the PNG. The downscale matters more than the format: decoding and uploading three
+8192px atlases is ~200 megapixels of work for a character about 600 px tall. Re-run it
+after adding or replacing a model folder:
+
+```bash
+pip install pillow
+python tools/make_webp.py            # encodes anything missing or stale
+python tools/make_webp.py --check    # report only
+python tools/make_webp.py --max 4096 --force   # sharper on very large/HiDPI windows
+python tools/make_webp.py --max 0 --force      # keep full resolution
+```
+
+`--max` is the longest edge, halved down so the dimensions stay powers of two (WebGL 1
+needs that for the mipmaps that keep her face from aliasing).
+
+### Bring-up order
+
+Three things keep the page near-instant, and the console says what each cost
+(`Everything ready Nms after boot - cubism …, model + textures …, point rig …`):
+
+- the framework's 41 ES modules are `<link rel="modulepreload">`ed, so importing them
+  is one parallel fetch instead of the waterfall the import graph describes;
+- a small inline module prefetches from `models/manifest.js` before that graph
+  resolves, so the `.moc3` downloads — and the textures download *and decode* — while
+  the SDK is still being imported;
+- `live2d/assets.js` keys every asset by the URL its `model3.json` declares, so
+  `loadModel()` gets the work already finished and nothing is fetched or decoded
+  twice; bytes and bitmaps are released as soon as they are on the GPU.
+
+Hu Tao, cold: ~6.7 s → ~450 ms to her first frame.
 
 ---
 
