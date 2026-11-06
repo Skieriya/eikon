@@ -2,9 +2,3 @@
 build/
 
 __pycache__/
-
-# Model packages nothing loads. models/hu_tao is the one the demo and the add-on
-# use; the "for PC" copy is the same asset unedited, and the .wpk is an archive
-# of a different model. Both stay on disk, out of the repository.
-models/Hu_Tao__model_for_PC_/
-models/*.wpk
