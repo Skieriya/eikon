@@ -22,6 +22,14 @@ It includes:
 ```
 live2d-example/
 ├── index.html          # Main page (canvas + UI controls)
+├── recorder.html       # Webcam motion-capture window (see "Record your own animation")
+├── live2d/
+│   └── recorded.js     # The takes recorder.html wrote, as ordinary motion clips
+├── recorder/
+│   ├── recorder.js     # Capture page logic: camera → parameters → .motion3.json
+│   ├── tracker.js      # MediaPipe Face Landmarker (vendored, offline)
+│   ├── mapping.js      # Face signals → each rig's own parameter names
+│   └── vendor/         # Third-party runtime + face model, licenses inside
 ├── css/
 │   └── style.css       # Styling
 ├── js/
@@ -38,17 +46,104 @@ live2d-example/
 
 ## Quick start (demo works immediately)
 
-1. Open `index.html` in any modern browser, or serve it with a local server:
+1. Serve the folder over HTTP - `file://` cannot load ES modules or `fetch()`
+   the model, so opening `index.html` directly will not work. Double-click
+   `start.bat`, or:
    ```bash
-   # Python 3
-   python -m http.server 8000
-
-   # Node (npx serve)
-   npx serve .
+   python serve.py              # http://127.0.0.1:8000/
    ```
-2. Visit `http://localhost:8000`.
-3. You'll see the demo character in **DEMO MODE**. Move your mouse over the
-   canvas, click the expression/motion buttons, and watch the parameter panel.
+   `serve.py` is a stdlib static server with the three things this page needs to
+   load fast: HTTP/1.1 keep-alive (one socket instead of ~60), a thread per
+   connection, and revalidation on every file - so a texture you re-encoded is
+   picked up on the next reload instead of being pinned in the browser cache.
+   `python -m http.server 8000` also works, just noticeably slower.
+2. Visit `http://127.0.0.1:8000`.
+3. Move your mouse - she follows your cursor, click to squash her, type in the
+   box to have her point at a part of the page (`where is faq?`).
+
+### Model textures
+
+`tools/make_webp.py` writes a `.webp` next to every texture the manifest references,
+downscaled to what the screen actually shows (Hu Tao: 64 MB of 8192px PNG → 1.1 MB of
+2048px WebP), and `live2d/assets.js` takes the `.webp` when it is there, falling back
+to the PNG. The downscale matters more than the format: decoding and uploading three
+8192px atlases is ~200 megapixels of work for a character about 600 px tall. Re-run it
+after adding or replacing a model folder:
+
+```bash
+pip install pillow
+python tools/make_webp.py            # encodes anything missing or stale
+python tools/make_webp.py --check    # report only
+python tools/make_webp.py --max 4096 --force   # sharper on very large/HiDPI windows
+python tools/make_webp.py --max 0 --force      # keep full resolution
+```
+
+`--max` is the longest edge, halved down so the dimensions stay powers of two (WebGL 1
+needs that for the mipmaps that keep her face from aliasing).
+
+### Bring-up order
+
+Three things keep the page near-instant, and the console says what each cost
+(`Everything ready Nms after boot - cubism …, model + textures …, point rig …`):
+
+- the framework's 41 ES modules are `<link rel="modulepreload">`ed, so importing them
+  is one parallel fetch instead of the waterfall the import graph describes;
+- a small inline module prefetches from `models/manifest.js` before that graph
+  resolves, so the `.moc3` downloads — and the textures download *and decode* — while
+  the SDK is still being imported;
+- `live2d/assets.js` keys every asset by the URL its `model3.json` declares, so
+  `loadModel()` gets the work already finished and nothing is fetched or decoded
+  twice; bytes and bitmaps are released as soon as they are on the GPU.
+
+Hu Tao, cold: ~6.7 s → ~450 ms to her first frame.
+
+### Record your own animation — `recorder.html`
+
+Open http://127.0.0.1:8000/recorder.html — or click **Record animation**, the card in the
+top-right of the demo page, which also says how many takes you have saved. Either way
+keep `serve.py` running, since it is the only thing that can write takes to disk.
+
+Your webcam becomes the puppet: MediaPipe Face Landmarker turns
+your head, eyes and mouth into the model's own parameters, `Record`/`R` starts a
+your head, eyes and mouth into the model's own parameters, `Record`/`R` starts a
+take, and **stopping it saves the take by itself** — no dialog, no button to press.
+
+- Written to: `models/<model>/motions/recorded/<name>.motion3.json`, plus a refreshed
+  `models/<model>/recorded.json`. Nothing inside the imported model is modified.
+- Named to: whatever you type in the box, or `take_01`, `take_02`, … A name already
+  on disk gains a suffix instead of replacing your earlier performance.
+- Format: an ordinary Cubism `.motion3.json`, 30 fps, one linear segment per sample —
+  readable by the Cubism Editor, VTube Studio and any other Live2D runtime, with
+  nothing custom to understand it.
+
+Back in the demo, `p` plays your takes (shift+`p` for the older ones); they appear in
+`recorder.html`'s own list too, numbered `1`-`9`. Hair and cloth are not baked in: a
+take stores the parameters you drove, and the physics rig re-runs them from your head
+motion on every playback. No webcam, or permission denied? The page still loads and a
+`Simulate` checkbox drives the same mapping from synthetic signals.
+
+---
+
+## She is also a Firefox add-on — `extension/`
+
+The same guide, on every site instead of only on this page: Hu Tao sits in the corner of
+whatever you are looking at, reads its DOM and points at what you ask for
+(`where is the email field?` scrolls to it and lights it up).
+
+She also walks you to the places that take more than one click. Ask *how do I turn off
+memory* and she points at the first step, waits until you have actually clicked it,
+then finds the next one in whatever the page has become — because the control you
+want usually does not exist until the panel holding it is open. You can teach her a
+route on a site she has never seen, and she remembers it.
+
+```bash
+python tools/build_extension.py     # -> build/firefox/ + build/hutao-guide-firefox.xpi
+```
+
+then `about:debugging#/runtime/this-firefox` → **Load Temporary Add-on…** →
+`build/firefox/manifest.json`. See [extension/README.md](extension/README.md) for the
+keys, the routes, the three-document layout and why the recorder is deliberately not
+in the package.
 
 ---
 

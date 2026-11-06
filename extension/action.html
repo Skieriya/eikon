@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; }
+  body {
+    width: 244px; padding: 10px 11px 11px;
+    background: #1b1024; color: #f6edff;
+    font: 12.5px/1.45 system-ui, "Segoe UI", Roboto, sans-serif;
+  }
+  h1 { margin: 0 0 2px; font-size: 13px; font-weight: 650; }
+  p { margin: 0 0 8px; color: #b9a6cf; }
+  #state { min-height: 1.3em; margin: 0 0 8px; color: #ff8ad6; }
+  #state.off { color: #b9a6cf; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  button {
+    padding: 6px 8px;
+    background: rgba(255, 255, 255, .07); color: #f6edff;
+    border: 1px solid rgba(255, 255, 255, .16); border-radius: 9px;
+    font: inherit; cursor: pointer;
+  }
+  button:hover { background: rgba(255, 138, 214, .2); }
+  button.wide { grid-column: 1 / -1; }
+  kbd { font: 11px ui-monospace, Menlo, Consolas, monospace;
+    background: rgba(255, 255, 255, .09); border: 1px solid rgba(255, 255, 255, .16);
+    border-radius: 5px; padding: 1px 4px; }
+  #tip { margin-top: 9px; color: #9d8bb2; font-size: 11.5px; }
+  /* What she learned on THIS site, and the one button that takes it away again. */
+  #routes { margin-top: 9px; }
+  #routes[hidden] { display: none; }
+  #routes h2 { margin: 0 0 4px; font-size: 10.5px; font-weight: 600;
+    letter-spacing: .06em; text-transform: uppercase; color: #b9a6cf; }
+  #routelist { margin: 0 0 6px; padding-left: 16px; color: #d8cbe8; font-size: 11.5px; }
+  #routelist li { margin-bottom: 2px; }
+</style>
+</head>
+<body>
+  <h1>Hu Tao — UI Guide</h1>
+  <p>She reads this page and points at what you ask for.</p>
+  <div id="state">Checking…</div>
+
+  <div class="grid">
+    <button id="ask">Ask her</button>
+    <button id="hide">Hide her</button>
+    <button id="prev">Back</button>
+    <button id="next">Next</button>
+    <button id="cycle" class="wide">Walk the page</button>
+  </div>
+
+  <div id="routes" hidden>
+    <h2>Routes she remembers here</h2>
+    <ul id="routelist"></ul>
+    <button id="forget" class="wide">Forget them</button>
+  </div>
+
+  <div id="tip">Ask “how do I …” and she walks a route step by step, waiting for each
+    click; Teach her a route you do often and she remembers it. She stands where you
+    last left her — drag her, pull her corner to resize, double-click to send her back.
+    <kbd>Alt</kbd> <kbd>Shift</kbd> <kbd>A</kbd> asks from anywhere.</div>
+  <script src="./action.js"></script>
+</body>
+</html>

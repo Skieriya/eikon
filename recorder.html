@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Live2D Recorder - perform an animation with your webcam</title>
+
+  <!-- Same framework closure as index.html (live2d/loadModel.js imports all of it),
+       preloaded the same way: 41 modules fetched with the document instead of one
+       import after another. See index.html for why. -->
+  <link rel="modulepreload" href="./framework/dist/live2dcubismframework.js" />
+  <link rel="modulepreload" href="./framework/dist/cubismdefaultparameterid.js" />
+  <link rel="modulepreload" href="./framework/dist/cubismframeworkconfig.js" />
+  <link rel="modulepreload" href="./framework/dist/cubismmodelsettingjson.js" />
+  <link rel="modulepreload" href="./framework/dist/icubismmodelsetting.js" />
+  <link rel="modulepreload" href="./framework/dist/effect/cubismbreath.js" />
+  <link rel="modulepreload" href="./framework/dist/effect/cubismeyeblink.js" />
+  <link rel="modulepreload" href="./framework/dist/effect/cubismlook.js" />
+  <link rel="modulepreload" href="./framework/dist/effect/cubismpose.js" />
+  <link rel="modulepreload" href="./framework/dist/id/cubismid.js" />
+  <link rel="modulepreload" href="./framework/dist/id/cubismidmanager.js" />
+  <link rel="modulepreload" href="./framework/dist/math/cubismmath.js" />
+  <link rel="modulepreload" href="./framework/dist/math/cubismmatrix44.js" />
+  <link rel="modulepreload" href="./framework/dist/math/cubismvector2.js" />
+  <link rel="modulepreload" href="./framework/dist/model/cubismmoc.js" />
+  <link rel="modulepreload" href="./framework/dist/model/cubismmodel.js" />
+  <link rel="modulepreload" href="./framework/dist/model/cubismmodelmultiplyandscreencolor.js" />
+  <link rel="modulepreload" href="./framework/dist/motion/acubismmotion.js" />
+  <link rel="modulepreload" href="./framework/dist/motion/cubismexpressionmotion.js" />
+  <link rel="modulepreload" href="./framework/dist/motion/cubismexpressionmotionmanager.js" />
+  <link rel="modulepreload" href="./framework/dist/motion/cubismmotion.js" />
+  <link rel="modulepreload" href="./framework/dist/motion/cubismmotioninternal.js" />
+  <link rel="modulepreload" href="./framework/dist/motion/cubismmotionjson.js" />
+  <link rel="modulepreload" href="./framework/dist/motion/cubismmotionmanager.js" />
+  <link rel="modulepreload" href="./framework/dist/motion/cubismmotionqueueentry.js" />
+  <link rel="modulepreload" href="./framework/dist/motion/cubismmotionqueuemanager.js" />
+  <link rel="modulepreload" href="./framework/dist/physics/cubismphysics.js" />
+  <link rel="modulepreload" href="./framework/dist/physics/cubismphysicsinternal.js" />
+  <link rel="modulepreload" href="./framework/dist/physics/cubismphysicsjson.js" />
+  <link rel="modulepreload" href="./framework/dist/rendering/cubismclippingmanager.js" />
+  <link rel="modulepreload" href="./framework/dist/rendering/cubismoffscreenmanager.js" />
+  <link rel="modulepreload" href="./framework/dist/rendering/cubismoffscreenrendertarget_webgl.js" />
+  <link rel="modulepreload" href="./framework/dist/rendering/cubismrenderer.js" />
+  <link rel="modulepreload" href="./framework/dist/rendering/cubismrenderer_webgl.js" />
+  <link rel="modulepreload" href="./framework/dist/rendering/cubismrendertarget_webgl.js" />
+  <link rel="modulepreload" href="./framework/dist/rendering/cubismshader_webgl.js" />
+  <link rel="modulepreload" href="./framework/dist/type/csmrectf.js" />
+  <link rel="modulepreload" href="./framework/dist/utils/cubismarrayutils.js" />
+  <link rel="modulepreload" href="./framework/dist/utils/cubismdebug.js" />
+  <link rel="modulepreload" href="./framework/dist/utils/cubismjson.js" />
+  <link rel="modulepreload" href="./framework/dist/utils/cubismjsonextension.js" />
+
+  <!-- The model's bytes and texture decodes start with the document, as in
+       index.html, so the rig is on screen while the 14 MB face model is still
+       coming in behind it. -->
+  <script type="module">
+    import { prefetch } from './live2d/assets.js';
+    import { resolveModel, DEFAULT_MODEL } from './models/manifest.js';
+    prefetch(resolveModel(new URLSearchParams(location.search).get('model') || DEFAULT_MODEL));
+  </script>
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; background: #0b1120; color: #f8fafc;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
+
+    #app { display: grid; grid-template-columns: minmax(300px, 30vw) minmax(280px, 1fr) 320px;
+      gap: 12px; padding: 12px; height: 100vh; }
+    .col { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+    .col.panels { overflow-y: auto; padding-right: 2px; }
+
+    .card { padding: 0.9rem 1rem; border-radius: 14px; background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(148, 163, 184, 0.22); }
+    .card h2 { font-size: 0.72rem; font-weight: 600; letter-spacing: 0.08em;
+      text-transform: uppercase; color: #64748b; margin-bottom: 0.6rem; }
+    .card p.note { font-size: 0.74rem; color: #94a3b8; line-height: 1.45; }
+
+    /* camera + stage share the same black so neither looks like a hole in the page */
+    #camBox { position: relative; aspect-ratio: 4 / 3; background: #000; border-radius: 12px;
+      overflow: hidden; border: 1px solid rgba(148, 163, 184, 0.22); }
+    #cam, #overlay { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+    /* Mirrored: an un-mirrored webcam is the one view nobody can move naturally in. */
+    #camBox.mirror #cam, #camBox.mirror #overlay { transform: scaleX(-1); }
+    #camState { font-size: 0.74rem; color: #94a3b8; margin-top: 0.5rem; min-height: 1rem; }
+    #stageCard { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+    #stage { flex: 1; position: relative; background: radial-gradient(circle at 50% 40%, #132038, #0b1120 70%);
+      border-radius: 12px; overflow: hidden; border: 1px solid rgba(148, 163, 184, 0.22); }
+    #glcanvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+    button { font: inherit; font-size: 0.82rem; color: #e2e8f0; background: #1e293b;
+      border: 1px solid rgba(148, 163, 184, 0.25); border-radius: 9px; padding: 0.5rem 0.7rem;
+      cursor: pointer; transition: background 0.15s ease, color 0.15s ease; }
+    button:hover:not(:disabled) { background: #334155; color: #38bdf8; }
+    button:disabled { opacity: 0.45; cursor: not-allowed; }
+    button.primary { background: #38bdf8; color: #0b1120; font-weight: 600; border-color: #38bdf8; }
+    button.primary:hover:not(:disabled) { background: #7dd3fc; color: #0b1120; }
+    button.stop { background: #ef4444; border-color: #ef4444; color: #fff; font-weight: 600; }
+    button.stop:hover:not(:disabled) { background: #f87171; color: #fff; }
+    button.wide { width: 100%; margin-top: 0.5rem; }
+    button.ghost { background: transparent; }
+    button.on { border-color: #38bdf8; color: #38bdf8; }
+    select, input[type=text] { width: 100%; font: inherit; font-size: 0.82rem; color: #f8fafc;
+      background: rgba(30, 41, 59, 0.8); border: 1px solid rgba(148, 163, 184, 0.25);
+      border-radius: 8px; padding: 0.45rem 0.55rem; outline: none; }
+    select:focus, input[type=text]:focus { border-color: #38bdf8; }
+    label.check { display: flex; align-items: center; gap: 0.45rem; font-size: 0.78rem;
+      color: #cbd5e1; cursor: pointer; }
+
+    #transport { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+    #transport #downloadBtn { grid-column: 1 / -1; }
+    #takeTime { font-variant-numeric: tabular-nums; font-size: 1.5rem; color: #f8fafc;
+      grid-column: 1 / -1; text-align: center; min-height: 1.7rem; }
+    #takeTime.hot { color: #f87171; }
+    #takeInfo { grid-column: 1 / -1; font-size: 0.74rem; color: #7dd3fc; text-align: center; min-height: 1rem; }
+
+    #status { font-size: 0.78rem; color: #94a3b8; line-height: 1.4; min-height: 2.2rem; }
+
+    .meter { display: grid; grid-template-columns: 88px 1fr 34px; align-items: center;
+      gap: 0.45rem; font-size: 0.72rem; color: #cbd5e1; margin-bottom: 0.34rem; }
+    .meter i { position: relative; display: block; height: 7px; background: #1e293b; border-radius: 4px; }
+    /* The fill is placed in JS (--a left, --w width): a two-sided bar has to grow
+       leftwards as well as right, which CSS has no abs() for. */
+    .meter i::after { content: ''; position: absolute; top: 0; bottom: 0; left: var(--a, 0%);
+      width: var(--w, 0%); border-radius: 4px; background: #38bdf8; }
+    .meter i[data-dir=both]::before { content: ''; position: absolute; top: -2px; bottom: -2px;
+      width: 2px; left: calc(50% - 1px); background: #475569; }
+    .meter b { font-size: 0.7rem; font-weight: 500; color: #64748b; text-align: right;
+      font-variant-numeric: tabular-nums; }
+
+    .tune { display: grid; grid-template-columns: 88px 1fr auto; align-items: center;
+      gap: 0.5rem; margin-bottom: 0.45rem; font-size: 0.75rem; color: #cbd5e1; }
+    .tune input[type=range] { width: 100%; accent-color: #38bdf8; }
+    .tune button { padding: 0.15rem 0.45rem; font-size: 0.68rem; }
+    #clips { display: flex; flex-direction: column; gap: 0.4rem; }
+    #clips button { text-align: left; font-variant-numeric: tabular-nums; }
+    #clips .empty { font-size: 0.74rem; color: #64748b; }
+
+    #loader { position: absolute; inset: 0; background: #0b1120; display: flex; z-index: 30;
+      flex-direction: column; align-items: center; justify-content: center; gap: 0.6rem;
+      text-align: center; padding: 2rem; transition: opacity 0.3s ease; }
+    #loader.hidden { opacity: 0; pointer-events: none; }
+    #loadText { font-size: 0.85rem; color: #94a3b8; max-width: 34rem; }
+    #loadError { color: #f87171; font-size: 0.82rem; display: none; max-width: 34rem; line-height: 1.5; }
+    .spinner { width: 34px; height: 34px; border: 4px solid #1e293b; border-top-color: #38bdf8;
+      border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    header { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+    header h1 { font-size: 0.95rem; font-weight: 600; }
+    header a { font-size: 0.75rem; color: #7dd3fc; text-decoration: none; }
+    header a:hover { color: #38bdf8; text-decoration: underline; }
+    .keys { font-size: 0.7rem; color: #64748b; line-height: 1.6; }
+    .keys kbd { background: #1e293b; border-radius: 4px; padding: 0.05rem 0.3rem; color: #cbd5e1; }
+    @media (max-width: 980px) { #app { grid-template-columns: 1fr 1fr; } .col.panels { grid-column: 1 / -1; } }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- 1. what the camera sees -->
+    <div class="col">
+      <div class="card">
+        <header>
+          <h1>Face recorder</h1>
+          <a href="./index.html" title="Back to the demo">&larr; demo</a>
+        </header>
+        <p class="note" style="margin: 0.5rem 0 0.7rem">Perform a face with your webcam on; the model
+          follows it live. Stopping saves the take as a normal <code>.motion3.json</code> that the demo
+          page and the Cubism Editor can both open.</p>
+        <div id="camBox" class="mirror">
+          <video id="cam" playsinline muted></video>
+          <canvas id="overlay"></canvas>
+        </div>
+        <p id="camState">Waiting for the model to load...</p>
+        <label class="check" style="margin-top: 0.5rem">
+          <input type="checkbox" id="mirrorChk" checked> mirror preview
+        </label>
+        <label class="check" style="margin-top: 0.35rem">
+          <input type="checkbox" id="simulateChk"> simulate a performance (no camera)
+        </label>
+      </div>
+
+      <div class="card">
+        <h2>Take</h2>
+        <div id="transport">
+          <div id="takeTime"></div>
+          <div id="takeInfo"></div>
+          <input type="text" id="takeName" placeholder="name (optional - auto: take_01)" maxlength="40">
+          <label class="check"><input type="checkbox" id="loopChk"> loop</label>
+          <button id="recordBtn" class="primary">Record</button>
+          <button id="previewBtn" disabled>Preview</button>
+          <!-- Only shown when the automatic write failed; a static server cannot save files. -->
+          <button id="downloadBtn" hidden>Download the take</button>
+        </div>
+        <p id="status" style="margin-top: 0.7rem">Loading...</p>
+      </div>
+
+      <div class="card keys">
+        <kbd>R</kbd> record/stop &nbsp; <kbd>space</kbd> preview &nbsp; <kbd>N</kbd> set neutral pose<br>
+        <kbd>1</kbd>-<kbd>9</kbd> play a saved take &nbsp;·&nbsp; stopping a take saves it by itself
+      </div>
+    </div>
+
+    <!-- 2. what the rig does -->
+    <div class="col">
+      <div class="card" id="stageCard">
+        <header>
+          <h2 style="margin: 0">Model</h2>
+          <select id="modelSelect" style="width: auto"></select>
+        </header>
+        <div id="stage" style="margin-top: 0.6rem">
+          <canvas id="glcanvas"></canvas>
+        </div>
+        <p class="note" style="margin-top: 0.6rem">Everything you see here is what gets written: the
+          take samples the model's own parameter values at 30&nbsp;fps, and preview plays the finished
+          file back through the same motion player the demo uses. Hair and other physics are not baked
+          in - they re-run from your head motion on every playback.</p>
+      </div>
+    </div>
+
+    <!-- 3. the knobs -->
+    <div class="col panels">
+      <div class="card">
+        <h2>Live signals</h2>
+        <div id="meters"></div>
+      </div>
+      <div class="card">
+        <h2>Tracking feel</h2>
+        <div id="tuning"></div>
+        <p class="note" style="margin-top: 0.6rem">Gains and flips apply to the camera, not to the file:
+          a saved take holds the values she reached, whichever way you had to turn to get there.</p>
+      </div>
+      <div class="card">
+        <h2>Saved takes</h2>
+        <div id="clips"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="loader">
+    <div class="spinner"></div>
+    <p id="loadText">Loading...</p>
+    <p id="loadError"></p>
+  </div>
+
+  <!-- Cubism Core is a plain script; the recorder module needs Live2DCubismCore global. -->
+  <script src="./core/live2dcubismcore.js"></script>
+  <script>
+    // Nothing here can work from disk: ES modules, the 14 MB wasm and getUserMedia
+    // all require a real origin, and saving a take needs serve.py's POST route.
+    if (location.protocol === 'file:') {
+      var lt = document.getElementById('loadText');
+      lt.textContent = 'Serve this page over HTTP first: run python serve.py, then open http://127.0.0.1:8000/recorder.html';
+      lt.style.color = '#f87171';
+      document.querySelector('#loader .spinner').style.display = 'none';
+    }
+  </script>
+  <script type="module" src="./recorder/recorder.js"></script>
+</body>
+</html>

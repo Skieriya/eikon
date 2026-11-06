@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- The ask bar. It lives in its own frame, not in the site's DOM, so a strict
+     page CSP cannot veto its stylesheet and the site's CSS cannot reach into it —
+     which is the usual reason extensions ship a widget like this instead of a
+     plain div. Only the container in the page is the site's DOM, and it carries
+     nothing but position and size. -->
+<style>
+  :root {
+    --ink: #f6edff;
+    --dim: #b9a6cf;
+    --edge: rgba(255, 255, 255, .14);
+    --glass: rgba(24, 14, 34, .88);
+    --rose: #ff8ad6;
+    --violet: #b48cff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: transparent; color: var(--ink);
+    font: 13px/1.4 system-ui, "Segoe UI", Roboto, sans-serif; }
+  body { display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
+    padding: 2px; }
+
+  #bar {
+    display: flex; align-items: center; gap: 6px;
+    width: 100%;
+    padding: 5px 7px;
+    background: var(--glass);
+    border: 1px solid var(--edge);
+    border-radius: 999px;
+    box-shadow: 0 8px 26px rgba(0, 0, 0, .38);
+    backdrop-filter: blur(9px);
+  }
+  #bar:focus-within { border-color: rgba(255, 138, 214, .55); }
+
+  #q {
+    flex: 1 1 auto; min-width: 0;
+    padding: 3px 6px;
+    background: transparent; border: 0; outline: 0;
+    color: var(--ink); font: inherit;
+  }
+  #q::placeholder { color: var(--dim); }
+
+  button {
+    flex: 0 0 auto;
+    padding: 3px 9px;
+    background: rgba(255, 255, 255, .07);
+    color: var(--ink);
+    border: 1px solid var(--edge);
+    border-radius: 999px;
+    font: inherit; font-size: 12px;
+    cursor: pointer;
+  }
+  button:hover { background: rgba(255, 138, 214, .18); border-color: rgba(255, 138, 214, .5); }
+  button:disabled { opacity: .45; cursor: default; }
+  button.on { background: rgba(180, 140, 255, .3); border-color: var(--violet); }
+
+  #count { color: var(--dim); font-size: 11px; padding-right: 2px; white-space: nowrap; }
+
+  #sheet {
+    display: none;
+    width: 100%;
+    padding: 8px 10px 10px;
+    background: var(--glass);
+    border: 1px solid var(--edge);
+    border-radius: 14px;
+    box-shadow: 0 12px 34px rgba(0, 0, 0, .42);
+    backdrop-filter: blur(9px);
+  }
+  body.open #sheet { display: block; }
+
+  #status { min-height: 1.2em; color: var(--dim); }
+  #status.ok { color: var(--rose); }
+  #status.error { color: #ffb4c2; }
+
+  /* The route she is walking, or the one she is learning. Only ever shown while
+     one of those is actually going on, so an idle bar stays one pill tall. */
+  #steps { display: none; margin-top: 8px; }
+  #steps.show { display: block; }
+  #pathName { margin: 0 0 6px; font-size: 12px; color: var(--ink); font-weight: 600; }
+  #pathNote { margin: 0 0 6px; font-size: 11.5px; color: var(--dim); }
+  #pathSteps { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 8px;
+    padding: 0; list-style: none; counter-reset: step; }
+  #pathSteps li { font-size: 11.5px; color: var(--dim);
+    border: 1px dashed var(--edge); border-radius: 8px; padding: 2px 7px;
+    display: flex; align-items: center; gap: 5px; }
+  #pathSteps li::before { counter-increment: step; content: counter(step);
+    color: var(--violet); font-size: 10.5px; }
+  #pathSteps li.done { border-style: solid; color: var(--dim); opacity: .7; }
+  #pathSteps li.now { border: 1px solid var(--rose); color: var(--ink);
+    background: rgba(255, 138, 214, .2); }
+  #pathSteps li.stuck { border-color: #ffb4c2; color: #ffb4c2; }
+
+  .row { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+  .dim { color: var(--dim); font-size: 11px; }
+
+  h2 { margin: 10px 0 6px; font-size: 11px; font-weight: 600;
+    letter-spacing: .06em; text-transform: uppercase; color: var(--dim); }
+  #list { display: flex; flex-wrap: wrap; gap: 4px; max-height: 168px; overflow: auto; }
+  #list button { border-radius: 8px; font-size: 11.5px; text-align: left;
+    max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #list button.here { background: rgba(255, 138, 214, .26); border-color: var(--rose); }
+
+  #keys { margin-top: 10px; color: var(--dim); font-size: 11.5px; }
+  kbd { font: 11px ui-monospace, Menlo, Consolas, monospace; color: var(--ink);
+    background: rgba(255, 255, 255, .08); border: 1px solid var(--edge);
+    border-radius: 5px; padding: 1px 4px; }
+
+  /* Nothing on the bar is decoration you cannot reach: the whole sheet is only
+     there when the bar is open, so a collapsed bar is one pill tall. */
+</style>
+</head>
+<body>
+  <div id="bar">
+    <input id="q" type="text" placeholder="Ask Hu Tao — “where is the sign-up?” · “how do I turn memory off?”"
+           autocomplete="off" spellcheck="false" aria-label="Ask Hu Tao about this page">
+    <span id="count"></span>
+    <button id="prev" title="Previous element (Alt+Shift+P)">&larr;</button>
+    <button id="next" title="Next element (Alt+Shift+N)">&rarr;</button>
+    <button id="cycle" title="Walk the page on its own (Alt+Shift+C)">Cycle</button>
+    <button id="more" title="Show what is on this page" aria-expanded="false">&hellip;</button>
+  </div>
+
+  <div id="sheet">
+    <div id="status"></div>
+
+    <div id="steps">
+      <p id="pathName"></p>
+      <p id="pathNote"></p>
+      <ol id="pathSteps"></ol>
+      <div class="row" id="pathRow">
+        <button id="skip" title="I clicked it — move on to the next step">I clicked it &rarr;</button>
+        <button id="pback" title="Go back a step">&larr;</button>
+        <button id="pstop" title="Give up on this route">Stop</button>
+      </div>
+    </div>
+
+    <h2>On this page</h2>
+    <div id="list"></div>
+
+    <div class="row">
+      <button id="teach" title="Do the route yourself and she will remember it for next time">Teach her a route</button>
+      <span id="known" class="dim"></span>
+    </div>
+
+    <div id="keys">
+      <kbd>Alt</kbd> <kbd>Shift</kbd> <kbd>A</kbd> ask &middot;
+      <kbd>N</kbd> next &middot; <kbd>P</kbd> back &middot; <kbd>C</kbd> cycle &middot;
+      <kbd>Esc</kbd> let go<br>
+      Ask “how do I …” for a route, step by step &middot; Drag her anywhere &middot;
+      pull her corner or scroll over her to resize &middot; double-click puts her back
+    </div>
+  </div>
+
+  <script src="./panel.js"></script>
+</body>
+</html>

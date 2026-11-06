@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Northbeam Analytics — plans, sign in, help</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- A deliberately messy page: overlapping fixed banners, a control buried three
+     panels deep, marketing prose between the things you can actually click, a
+     hidden upsell that must NOT be discovered, and two buttons that share a word.
+     It exists so the page-side half of the add-on can be driven over http, with no
+     browser that can install an add-on: tools/build_extension.py copies this into
+     build/firefox/_test/, where ../content.js is the same file the manifest loads.
+
+         http://127.0.0.1:8000/build/firefox/_test/fixture.html
+
+     Everything after this comment block is fake site furniture. -->
+<style>
+  body { margin: 0; background: #0f1220; color: #e8eaf6;
+    font: 15px/1.6 system-ui, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 880px; margin: 0 auto; padding: 90px 22px 120px; }
+  header.top { position: fixed; top: 0; left: 0; right: 0; z-index: 40;
+    display: flex; gap: 14px; align-items: center; padding: 10px 18px;
+    background: rgba(12, 14, 26, .92); border-bottom: 1px solid #2a2f4a; }
+  header.top a { color: #a9b4ff; text-decoration: none; font-size: 14px; }
+  header.top .grow { flex: 1; }
+  input, select, textarea, button { font: inherit; }
+  #search { padding: 6px 10px; border-radius: 8px; border: 1px solid #3a4166;
+    background: #171c33; color: inherit; width: 190px; }
+  .cta { padding: 8px 16px; border-radius: 9px; border: 0; cursor: pointer;
+    background: #5468ff; color: #fff; }
+  section { margin: 40px 0; }
+  .card { border: 1px solid #2a2f4a; border-radius: 14px; padding: 18px;
+    background: #151a2e; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  label { display: block; font-size: 13px; color: #9aa3c7; margin-bottom: 4px; }
+  .field { margin-bottom: 12px; }
+  .field input { width: 100%; padding: 8px 10px; border-radius: 8px;
+    border: 1px solid #3a4166; background: #10152a; color: inherit; }
+  #cookies { position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+    display: flex; gap: 12px; align-items: center; padding: 12px 18px;
+    background: #1c2138; border-top: 1px solid #333a5c; font-size: 13px; }
+  #upsell { display: none; }
+  .ghost { background: transparent; border: 1px solid #3a4166; color: #cbd3f5;
+    padding: 7px 13px; border-radius: 9px; cursor: pointer; }
+  .nested { padding-left: 18px; border-left: 2px solid #2a2f4a; }
+  h1 { font-size: 30px; margin: 0 0 6px; }
+  h2 { font-size: 20px; margin: 0 0 10px; }
+  .muted { color: #8f98bd; }
+  footer { border-top: 1px solid #2a2f4a; margin-top: 60px; padding-top: 20px; }
+  footer a { color: #8f98bd; margin-right: 16px; }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <strong>Northbeam</strong>
+  <a href="#dashboards">Dashboards</a>
+  <a href="#pricing">Pricing</a>
+  <a href="#faq">Help</a>
+  <span class="grow"></span>
+  <input id="search" type="search" placeholder="Search reports" aria-label="Search reports">
+  <button class="cta" id="signin-top">Sign in</button>
+</header>
+
+<main>
+  <section id="hero">
+    <h1>Every ad channel, one truth.</h1>
+    <p class="muted">Northbeam reconciles spend, attribution and margin across
+      28 networks so finance and growth stop arguing about a spreadsheet. We ingest
+      from the platforms, deduplicate the conversions, and hand you a cohort view
+      that survives an audit.</p>
+    <div class="row">
+      <button class="cta" id="start-trial">Start a 14-day trial</button>
+      <a class="ghost" href="#tour" style="text-decoration:none">Watch the 3-minute tour</a>
+    </div>
+  </section>
+
+  <section id="pricing" class="card">
+    <h2>Plans</h2>
+    <p class="muted">Pricing scales on tracked revenue, not seats, because a seat
+      that costs more than the analyst using it is a seat nobody logs into.</p>
+    <div class="nested">
+      <div class="nested">
+        <div class="row">
+          <div class="field" style="flex:1">
+            <label for="plan">Plan</label>
+            <select id="plan">
+              <option>Growth — $490/mo</option>
+              <option>Scale — $1,290/mo</option>
+            </select>
+          </div>
+          <button class="ghost" data-guide-alias="buy checkout subscribe">Choose plan</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="recovery" class="card">
+    <h2>Recover your account</h2>
+    <p class="muted">If the reset email never arrived, the address on the account is
+      usually not the one you are thinking of.</p>
+    <form id="recovery-form">
+      <div class="field">
+        <label for="username">Username or workspace</label>
+        <input id="username" name="username" type="text" placeholder="e.g. skieriya">
+      </div>
+      <div class="field">
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" placeholder="you@company.com" autocomplete="email">
+      </div>
+      <div class="field">
+        <label for="password">New password</label>
+        <input id="password" name="password" type="password" placeholder="At least 12 characters">
+      </div>
+      <div class="row">
+        <button class="cta" type="submit">Send reset link</button>
+        <button class="ghost" type="button" id="cancel-recovery">Cancel</button>
+      </div>
+    </form>
+  </section>
+
+  <section id="flow" class="card">
+    <h2>Your workspace</h2>
+    <p class="muted">A settings dialog that builds itself a level at a time: nothing
+      below "Settings" exists in the DOM until you click your way down, which is
+      exactly what a single search cannot reach.</p>
+    <div class="row">
+      <button class="ghost" id="open-settings">Settings</button>
+      <span class="muted" id="flow-note">Nothing open.</span>
+    </div>
+    <div id="settings-sheet" hidden></div>
+  </section>
+
+  <section id="faq" class="card">
+    <h2>Frequently asked questions</h2>
+    <div class="row"><button class="ghost">Where does my data come from?</button></div>
+    <div class="row"><button class="ghost">Do you support offline sales?</button></div>
+    <div class="nested">
+      <div class="row"><button class="ghost" id="faq-billing">How does billing work?</button></div>
+    </div>
+  </section>
+
+  <section id="contact" class="card">
+    <h2>Talk to a human</h2>
+    <div class="field">
+      <label for="message">Message</label>
+      <textarea id="message" name="message" rows="3" placeholder="What is broken?"></textarea>
+    </div>
+    <button class="cta" id="contact-send">Contact sales</button>
+  </section>
+
+  <footer id="site-footer">
+    <a href="#privacy">Privacy</a>
+    <a href="#terms">Terms</a>
+    <a href="#security">Security</a>
+    <a href="#status">System status</a>
+    <p class="muted">© Northbeam Analytics. Nothing on this page is real; it is a
+      fixture for testing a guide.</p>
+  </footer>
+</main>
+
+<div id="upsell" class="card">
+  <h2>Hidden upsell</h2>
+  <button id="upsell-cta">Upgrade now</button>
+</div>
+
+<div id="cookies">
+  <span>We use cookies to measure the measurement tool.</span>
+  <span class="grow"></span>
+  <button class="ghost">Cookie settings</button>
+  <button class="cta" id="accept-cookies">Accept all</button>
+</div>
+
+<script>
+  // The nested flow: every level is built when you click into it and the previous
+  // one is thrown away, so the deepest control has no DOM at all until you have
+  // been walked to it. That is the case multi-level guidance exists to serve.
+  (function () {
+    const sheet = document.getElementById('settings-sheet');
+    const note = document.getElementById('flow-note');
+    const mk = (tag, attrs, text) => {
+      const e = document.createElement(tag);
+      for (const k in attrs || {}) e.setAttribute(k, attrs[k]);
+      if (text != null) e.textContent = text;
+      return e;
+    };
+    const row = (...kids) => { const d = mk('div', { class: 'row' }); kids.forEach((k) => d.appendChild(k)); return d; };
+    const tab = (label, on) => {
+      const b = mk('button', { class: 'ghost', type: 'button' }, label);
+      b.addEventListener('click', on);
+      return b;
+    };
+    const toggle = (label) => {
+      const b = mk('button', { class: 'cta', type: 'button', 'aria-pressed': 'false' }, label);
+      b.addEventListener('click', () => {
+        const on = b.getAttribute('aria-pressed') !== 'true';
+        b.setAttribute('aria-pressed', String(on));
+        note.textContent = label + (on ? ' on' : ' off');
+      });
+      return b;
+    };
+    const level = (title, ...kids) => {
+      sheet.textContent = '';
+      sheet.hidden = false;
+      sheet.appendChild(mk('h3', null, title));
+      kids.forEach((k) => sheet.appendChild(k));
+      note.textContent = title.toLowerCase() + ' open';
+    };
+    const memory = () => level('Memory',
+      row(toggle('Chat history'), toggle('Reference past chats')),
+      row(tab('Clear memory', () => { note.textContent = 'memory cleared'; })));
+    const appearance = () => level('Appearance', row(toggle('Dark mode')));
+    const personalization = () => level('Personalization',
+      row(tab('Memory', memory), tab('Appearance', appearance)));
+    const general = () => level('General',
+      row(toggle('Email digest'), tab('Rename workspace', () => { note.textContent = 'renaming'; })));
+    const dataControls = () => level('Data controls', row(toggle('Upload chats and files')));
+    const settings = () => level('Settings',
+      row(tab('General', general), tab('Personalization', personalization), tab('Data controls', dataControls)));
+
+    document.getElementById('open-settings').addEventListener('click', () => {
+      if (sheet.hidden) settings();
+      else sheet.hidden = true;
+    });
+    window.__fxFlow = {
+      close() { sheet.hidden = true; sheet.textContent = ''; note.textContent = 'Nothing open.'; },
+      note() { return note.textContent; },
+    };
+  })();
+</script>
+<script>
+  // Hand the frame a clock this page can advance: nothing here is ever painted by
+  // a browser that runs requestAnimationFrame in this harness.
+  window.__hutaoRaf = 'manual';
+</script>
+<script>
+  // Stand in for the add-on's background page, so the half of "she remembers a
+  // route" that outlives the page can be exercised over http: the very same
+  // background.js the add-on loads, with browser.storage.local as a plain map.
+  // Without the add-on there is no runtime, and a route she learned is gone
+  // when the tab closes — which would leave that half untested.
+  (function () {
+    const KEY = 'paths.v1';
+    const saved = localStorage.getItem('fx.' + KEY);
+    const store = saved ? { [KEY]: JSON.parse(saved) } : {};
+    const listeners = [];
+    const storageListeners = [];
+    const stub = {
+      runtime: {
+        getURL(name) { return new URL('../' + name, document.baseURI).href; },
+        onMessage: { addListener(fn) { listeners.push(fn); } },
+        sendMessage(msg) {
+          const out = listeners.map((fn) => fn(msg)).filter((r) => r !== undefined);
+          return Promise.resolve(out.length ? out[0] : undefined);
+        },
+      },
+      storage: { local: {
+        get(key) { return Promise.resolve({ [key]: store[key] }); },
+        set(obj) {
+          const changes = {};
+          for (const k in obj) changes[k] = { oldValue: store[k], newValue: obj[k] };
+          Object.assign(store, obj);
+          localStorage.setItem('fx.' + KEY, JSON.stringify(store[KEY] || []));
+          storageListeners.forEach((fn) => fn(changes, 'local'));
+          return Promise.resolve();
+        },
+      } },
+    };
+    stub.storage.onChanged = { addListener(fn) { storageListeners.push(fn); } };
+    window.browser = stub;
+    window.__fxStore = store;
+    const req = new XMLHttpRequest();
+    req.open('GET', '../background.js', false);
+    req.send(null);
+    if (req.status === 200) new Function('browser', req.responseText)(stub);
+  })();
+</script>
+<script src="../content.js"></script>
+<script>
+  // Assertions the harness reads: geometry of a real target, and a helper that
+  // reaches into her frame (same-origin here, never the case in the add-on).
+  window.__fx = {
+    rect(sel) {
+      const el = document.querySelector(sel);
+      if (!el) return null;
+      const b = el.getBoundingClientRect();
+      return { l: b.left, t: b.top, w: b.width, h: b.height };
+    },
+    center(sel) {
+      const r = this.rect(sel);
+      return r ? { x: r.l + r.w / 2, y: r.t + r.h / 2 } : null;
+    },
+    her() {
+      const f = document.querySelector('iframe[src*="hutao.html"]');
+      return f ? f.contentWindow : null;
+    },
+    // Non-black pixels in a box of her canvas — proof she is drawn, not just loaded.
+    ink(x0, y0, x1, y1) {
+      const w = this.her();
+      const gl = w.document.getElementById('stage').getContext('webgl');
+      const cw = gl.canvas.width, ch = gl.canvas.height, d = cw / w.innerWidth;
+      const px = new Uint8Array(4 * (x1 - x0) * (y1 - y0));
+      gl.readPixels(Math.round(x0 * d), Math.round((w.innerHeight - y1) * d),
+                    x1 - x0, y1 - y0, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      let lit = 0;
+      for (let i = 3; i < px.length; i += 4) if (px[i] > 12) lit++;
+      return { lit, of: px.length / 4 };
+    },
+    ringInk() {
+      const w = this.her();
+      const c = w.document.getElementById('ring');
+      const ctx = c.getContext('2d');
+      const d = c.width / w.innerWidth;
+      const img = ctx.getImageData(0, 0, c.width, c.height).data;
+      let lit = 0;
+      for (let i = 3; i < img.length; i += 4) if (img[i] > 12) lit++;
+      void d;
+      return lit;
+    },
+    caption() {
+      const w = this.her();
+      return w ? w.document.getElementById('caption').textContent : null;
+    },
+    panel() {
+      const f = document.querySelector('iframe[src*="panel.html"]');
+      if (!f) return null;
+      const d = f.contentDocument;
+      return {
+        status: d.getElementById('status').textContent,
+        count: d.getElementById('count').textContent,
+        open: d.body.classList.contains('open'),
+        height: f.parentElement.style.height,
+        chips: Array.from(d.querySelectorAll('#list button')).map((b) => b.textContent),
+        // The route strip: what she is walking, and the teach entry point.
+        route: {
+          shown: d.getElementById('steps').classList.contains('show'),
+          name: d.getElementById('pathName').textContent,
+          note: d.getElementById('pathNote').textContent,
+          steps: Array.from(d.querySelectorAll('#pathSteps li')).map((li) => li.textContent + '[' + li.className + ']'),
+          teach: d.getElementById('teach').textContent,
+          known: d.getElementById('known').textContent,
+          back: d.getElementById('pback').disabled,
+        },
+      };
+    },
+
+  };
+</script>
+</body>
+</html>

@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Guide embed demo - a totally different site</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #0f172a; color: #e2e8f0; min-height: 100vh; }
+    header { display: flex; gap: 1.5rem; padding: 1rem 2rem; border-bottom: 1px solid #1e293b; }
+    header a { color: #93c5fd; text-decoration: none; }
+    .hero { text-align: center; padding: 3rem 1rem; }
+    .hero button { padding: .7rem 1.4rem; border: 0; border-radius: 8px; background: #38bdf8; color: #082f49; font-weight: 600; cursor: pointer; }
+    .cards { display: flex; gap: 1rem; justify-content: center; padding: 2rem; }
+    .card { border: 1px solid #1e293b; border-radius: 12px; padding: 1rem 1.2rem; width: 200px; }
+    .card a { color: #a5b4fc; text-decoration: none; display: block; margin-top: .4rem; }
+    #viewport { position: fixed; inset: 0; pointer-events: none; }
+    #avatar { position: fixed; right: 24px; bottom: 24px; width: 180px; height: 220px; background: radial-gradient(circle at 50% 35%, #334155, #0b1120); border-radius: 16px; }
+    #lookReadout { position: fixed; right: 24px; bottom: 250px; font-size: .72rem; color: #64748b; text-align: right; }
+    .console { position: fixed; left: 50%; transform: translateX(-50%); bottom: 16px; display: flex; gap: .4rem; }
+    .console input { padding: .4rem .6rem; border-radius: 8px; border: 1px solid #334155; background: #1e293b; color: #fff; width: 220px; }
+    .console button { padding: .4rem .7rem; border-radius: 8px; border: 1px solid #334155; background: #334155; color: #fff; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <header data-guide-alias="menu">
+    <a href="#docs" data-guide-alias="documentation guides manual">Docs</a>
+    <a href="#support" data-guide-alias="support contact help">Support</a>
+    <a href="#pricing" data-guide-alias="price plans">Pricing</a>
+    <a href="#blog" data-guide-alias="articles posts">Blog</a>
+  </header>
+
+  <section class="hero" aria-label="Call to action">
+    <button id="cta" data-guide-alias="get started trial">Get Started</button>
+  </section>
+
+  <div class="cards">
+    <div class="card"><strong>Docs</strong><a href="#quickstart" data-guide-alias="quick start setup">Quick start</a></div>
+    <div class="card"><strong>Support</strong><a href="#faq2" data-guide-alias="faq questions help">FAQ</a></div>
+    <div class="card"><strong>Account</strong><a href="#login" data-guide-alias="sign in login">Login</a></div>
+  </div>
+
+  <!-- Geometry reference: a full-viewport box so a target's page position maps to a
+       natural gaze direction, exactly like a real full-screen model canvas would. -->
+  <div id="viewport"></div>
+  <!-- The "character": just an element with a position; the bridge only needs a rect. -->
+  <div id="avatar"></div>
+  <div id="lookReadout"></div>
+
+  <div class="console" data-guide-exclude>
+    <input id="guideBox" type="text" placeholder="Try: where is support?" autocomplete="off" />
+    <button id="guideGo">Go</button>
+    <button id="guidePrev">&#9664;</button>
+    <button id="guideNext">&#9654;</button>
+    <button id="guideAuto">Auto-cycle</button>
+    <p id="guideStatus" style="position:static;color:#7dd3fc;margin-left:.5rem"></p>
+  </div>
+
+  <script type="module">
+    import { mountGuide } from '../index.js';
+
+    // A stand-in model: the guide drives it exactly like a real CubismLook. On a
+    // real site you'd pass your actual `model` and `look` here and nothing else changes.
+    const model = { look: [0, 0] };
+    const look = {
+      updateParameters(_m, x, y) { model.look = [x, y]; render(); },
+    };
+    const avatar = document.getElementById('avatar');
+    const readout = document.getElementById('lookReadout');
+    const viewport = document.getElementById('viewport');
+    function render() {
+      const [x, y] = model.look;
+      readout.textContent = `look x=${x.toFixed(2)} y=${y.toFixed(2)}`;
+      avatar.style.background = `radial-gradient(circle at ${50 + x * 35}% ${50 - y * 35}%, #38bdf8 8%, #334155 9%, #0b1120 60%)`;
+    }
+
+    const bridge = mountGuide({
+      canvas: viewport,          // full-viewport geometry reference (screen<->clip)
+      model,
+      look,                      // factory applies it each tick()
+      sensitivity: 2.0,
+      smoothing: 8,
+      onGesture: () => console.log('[DEMO] gesture!'),
+    });
+
+    // Host render loop: just tick the bridge every frame (the model+look do the rest).
+    let last = performance.now();
+    (function frame(now) {
+      requestAnimationFrame(frame);
+      bridge.tick(Math.min(0.033, (now - last) / 1000));
+      last = now;
+    })(last);
+
+    console.log('[DEMO] mounted; UIGuide =', !!window.UIGuide);
+  </script>
+</body>
+</html>

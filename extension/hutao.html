@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- Hu Tao's layer. This document belongs to the extension, so the site's own
+     CSP can neither block these modules nor restyle this canvas: the add-on is a
+     full ESM page (WebGL, the Cubism core, the guide's gaze controller) that
+     happens to be composited over someone else's page.
+
+     Everything here is pointer-events:none and the host iframe carries the same
+     rule, so not one click, hover or scroll she receives goes through her — the
+     only input she gets is what the page's content script forwards, including the
+     presses that move and resize her (see the dock box in overlay.js). -->
+<style>
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: transparent;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  canvas { position: fixed; inset: 0; display: block; pointer-events: none; }
+  /* Drawn over the site, under her: the ring marks the element, she points at it. */
+  #ring { z-index: 1; }
+  #stage { z-index: 2; }
+  /* One line of prose, only while she is looking for something. left/top are
+     written by overlay.js so the pill follows her around the page. */
+  #caption {
+    position: fixed; left: 50%; top: 50%; transform: translateX(-50%);
+    z-index: 3;
+    max-width: 46ch;
+    padding: .45rem .9rem;
+    border-radius: 999px;
+    font: 500 13px/1.35 system-ui, "Segoe UI", Roboto, sans-serif;
+    color: #f4e9ff;
+    background: rgba(28, 16, 40, .82);
+    box-shadow: 0 6px 22px rgba(0,0,0,.35);
+    opacity: 0; transition: opacity .18s ease;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  #caption.show { opacity: 1; }
+  #caption.error { color: #ffd2d8; }
+</style>
+</head>
+<body>
+  <canvas id="ring"></canvas>
+  <canvas id="stage"></canvas>
+  <div id="caption"></div>
+
+  <script src="./core/live2dcubismcore.js"></script>
+  <script type="module" src="./overlay.js"></script>
+</body>
+</html>

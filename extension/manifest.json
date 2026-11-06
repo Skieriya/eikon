@@ -1,0 +1,43 @@
+{
+  "manifest_version": 2,
+  "name": "Hu Tao — UI Guide",
+  "version": "0.1.0",
+  "description": "Hu Tao reads the page you are on and points at the control you asked for. Discovery is deterministic and stays in your browser: no page content is ever transmitted.",
+  "homepage_url": "https://github.com/Skieriya/eikon",
+  "icons": {
+    "48": "icons/icon48.png",
+    "96": "icons/icon96.png"
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "hutao-guide@eikon.local",
+      "strict_min_version": "115.0"
+    }
+  },
+  "permissions": [
+    "<all_urls>",
+    "storage"
+  ],
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "browser_action": {
+    "default_icon": {
+      "48": "icons/icon48.png"
+    },
+    "default_title": "Hu Tao — UI Guide",
+    "default_popup": "action.html"
+  },
+  "web_accessible_resources": [
+    "hutao.html",
+    "panel.html"
+  ]
+}
