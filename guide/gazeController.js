@@ -5,6 +5,8 @@
 // Because the host drives the head, eyes and arm from the same gaze vector, all
 // three sweep toward the target together — that is the "guided movement".
 
+import { rectOf, isLive } from './discovery.js';
+
 function easeInOutCubic(t) {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 }
@@ -20,8 +22,8 @@ export function createGazeController(bridge, opts = {}) {
   let held = false;
 
   function centerClip(el) {
-    const r = el.getBoundingClientRect();
-    if (!r.width || !r.height) return null;
+    const r = rectOf(el);
+    if (!r || !r.width || !r.height) return null;
     const cx = r.left + r.width / 2;
     const cy = r.top + r.height / 2;
     const c = bridge.screenToClip(cx, cy);
@@ -38,7 +40,7 @@ export function createGazeController(bridge, opts = {}) {
   // Resolve once the glide settles. `instant` skips the tween (used for tests and
   // for callers that just want an immediate, exact aim).
   function to(node, { instant = false } = {}) {
-    if (!node || !node.el || !node.el.isConnected) {
+    if (!node || !node.el || !isLive(node.el)) {
       return Promise.resolve({ ok: false, reason: 'element missing' });
     }
     const target = centerClip(node.el);

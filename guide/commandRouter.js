@@ -95,27 +95,46 @@ function nodeHaystack(node) {
   return { compact: stripFillers(node.label), tokens: new Set(parts.join(' ').split(' ').filter(Boolean)) };
 }
 
+// A phrase has to be long enough to mean something, and it has to sit on word
+// boundaries: "email" is a word of "email field", "s" is not a word of anything.
+const MIN_PHRASE = 3;
+
+function phraseWithin(text, phrase) {
+  if (!text || !phrase || phrase.length < MIN_PHRASE || text.length < MIN_PHRASE) return false;
+  return (' ' + text + ' ').indexOf(' ' + phrase + ' ') >= 0;
+}
+
 function scoreNode(qTokens, compactQuery, node) {
   const hay = nodeHaystack(node);
   const hayCompact = hay.compact;
   let score = 0;
 
-  // Whole condensed query embedded in the label is the strongest signal.
-  if (compactQuery && hayCompact && (hayCompact.includes(compactQuery) || compactQuery.includes(hayCompact))) {
+  // Whole condensed query embedded in the label is the strongest signal. The
+  // reverse — the label embedded in the query — only counts when the label is a
+  // real word: "S" on an avatar is contained by "settings", "personalization" and
+  // nearly everything else, and scoring that is how a guide ends up pointing at
+  // the same button for every step of a route.
+  if (compactQuery.length >= MIN_PHRASE && hayCompact.includes(compactQuery)) {
     score += 6 + compactQuery.length;
+  } else if (phraseWithin(compactQuery, hayCompact)) {
+    score += 4 + hayCompact.length;                          // "email field" -> the field named "email"
   }
   // A control actually NAMED what you asked for beats one that merely contains it:
   // "settings" means the Settings button, not the "Cookie settings" link in a
   // banner that happens to be shallower in the tree.
-  if (compactQuery && hayCompact === compactQuery) score += 5;
+  if (compactQuery.length >= MIN_PHRASE && hayCompact === compactQuery) score += 5;
 
   for (const t of qTokens) {
     if (hay.tokens.has(t)) score += 4;                       // exact alias/label word
     else if (hayCompact.includes(t)) score += 2.5;           // word appears inside label
     else {
-      // A shared prefix ("emai" -> "email", "pass" -> "password") is a strong hit.
+      // A shared prefix ("emai" -> "email", "pass" -> "password") is a strong hit,
+      // but only between words: an initial is a prefix of half the dictionary.
       let prefix = false;
-      for (const h of hay.tokens) { if (h.startsWith(t) || t.startsWith(h)) { prefix = true; break; } }
+      for (const h of hay.tokens) {
+        if (h.length < MIN_PHRASE) continue;
+        if (h.startsWith(t) || t.startsWith(h)) { prefix = true; break; }
+      }
       if (prefix) score += 2.5;
       else {
         let best = 99;

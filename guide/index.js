@@ -5,7 +5,7 @@
 // late-rendered panels or newly typed fields stay navigable — that same re-discovery
 // is what lets a path keep going after you open the panel holding the next step.
 
-import { discoverUIElements, isPressable } from './discovery.js';
+import { discoverUIElements, invalidateStyleCache, isPressable, hoverEvidence, rectOf, isLive, closestDeep, parentEl, scrollIntoViewDeep } from './discovery.js';
 import { CircularQueue, flattenTree } from './circularQueue.js';
 import { parseIntent, matchQuery } from './commandRouter.js';
 import { createGazeController } from './gazeController.js';
@@ -17,20 +17,54 @@ let excludes = [];
 let cycleTimer = null;
 let requeue = Promise.resolve();
 let observing = false, observerPaused = false;
-let clicking = false;
+const wiredDocs = new WeakSet();
 const listeners = new Set();
 
 // Path state: what she knows, what she is walking, what she is recording.
 let learned = [];
 let hooks = {};
 let teaching = null;
+let revealTried = new Set();      // openers already offered for this step
+let revealStep = -1;
+let lastMissKey = '';
+let watchTimer = null;
+let pressDown = null, lastClickAt = 0;
+let hoverTimer = null;
+// Whether the step AFTER the one she is pointing at was already on screen when
+// she pointed. Measured then, not when the pointer arrives: a :hover flyout is
+// open by the time the pointerover handler runs, so asking at that moment would
+// always answer "it was already there" and no hover could ever count.
+let nextPresent = false;
 let settleTimer = null, settleUntil = 0;
 const SETTLE_QUIET_MS = 550, SETTLE_MAX_MS = 3000;
+// Long enough for a flyout to animate in, short enough to feel like an answer.
+const HOVER_DWELL_MS = 260, HOVER_WINDOW_MS = 6000, HOVER_RETRY_MS = 160;
 
 function rebuild() {
-  roots = discoverUIElements(document, { exclude: excludes });
-  queue.setItems(flattenTree(roots));
+  return adopt(discoverUIElements(document, { exclude: excludes }));
+}
+
+function adopt(tree) {
+  roots = tree;
+  const flat = flattenTree(roots);
+  queue.setItems(flat);
+  // A press inside a frame never reaches this document's listeners, so every
+  // document she can see has to be watched in its own right.
+  for (const n of flat) wirePress(n.el.ownerDocument);
   return roots;
+}
+
+// Capture, so a site that stops propagation on its own buttons still cannot hide
+// a press from her: she is watching whether you did the step, not who heard it.
+function wirePress(doc) {
+  if (!doc || wiredDocs.has(doc)) return;
+  wiredDocs.add(doc);
+  doc.addEventListener('click', onUserClick, true);
+  doc.addEventListener('keydown', onUserKey, true);
+  doc.addEventListener('pointerdown', onPointerDown, true);
+  doc.addEventListener('pointerup', onPointerUp, true);
+  doc.addEventListener('pointerover', onUserHover, true);
+  doc.addEventListener('mouseover', onUserHover, true);
 }
 
 function scheduleRebuild() {
@@ -46,13 +80,53 @@ function scheduleRebuild() {
   });
 }
 
-// The page just moved. Two things a path cares about: a step that was waiting for
-// the page to settle can now be taken, and a step she could not find may exist now
-// that whatever was hiding it has opened.
+// The page just moved. Three things a path cares about: a step waiting for the
+// page to settle can now be taken, the control she is holding may have been
+// replaced by a re-render, and a step she could not find may exist now that
+// whatever was hiding it has opened.
 function onDomChange() {
   if (!path.active) return;
   if (path.awaiting === 'settle') { armSettle(); return; }
+  if (refreshHeld()) return;
   if (path.awaiting === 'missing') path.retry();
+}
+
+// A mutation observer on the body cannot see inside a shadow root or a frame, and
+// a frame finishing its load mutates nothing in the parent at all. While she is
+// walking or watching, look again on a clock instead: it costs nothing when no
+// route is running, because it clears itself.
+function startWatch() {
+  if (watchTimer) return;
+  watchTimer = setInterval(() => {
+    if (!path.active && !teaching) { stopWatch(); return; }
+    if (!path.active || path.awaiting === 'settle') return;
+    if (refreshHeld()) return;
+    if (path.awaiting === 'missing') path.retry();
+  }, 900);
+}
+
+function stopWatch() {
+  if (watchTimer) { clearInterval(watchTimer); watchTimer = null; }
+}
+
+// The element she is holding may have been thrown away and rebuilt while she was
+// pointing at it. Same step, same words, new object: move her onto the live one
+// without making a fuss, because nothing about the route has changed.
+function refreshHeld() {
+  if (!path.active) return false;
+  const st = path.status();
+  if (!st || (st.awaiting !== 'click' && st.awaiting !== 'reveal')) return false;
+  const held = path.node;
+  if (st.awaiting === 'click' && held && isLive(held.el)) {
+    const r = rectOf(held.el);
+    if (r && r.width && r.height) return false;
+  }
+  const step = path.plan && path.plan.steps[st.i];
+  const node = resolveStep(step);
+  if (!node || (held && node.el === held.el)) return false;
+  path.retarget(node);
+  goto(node, { instant: true });
+  return true;
 }
 
 function armSettle() {
@@ -65,7 +139,7 @@ function armSettle() {
 
 function takeSettledStep() {
   settleTimer = null; settleUntil = 0;
-  path.advance();
+  path.settled();
 }
 
 function emit() {
@@ -118,16 +192,114 @@ function flatNodes() {
 // longer name anything — a redesign renames things far more often than it moves
 // them, and a wrong-but-confident point is worse than "I can't find it".
 function resolveStep(step) {
+  const node = findStep(step);
+  // How this control is worked is a fact about the page, not about the plan: a
+  // nav row with a flyout under it is hovered even if the route said "click".
+  if (node) {
+    const v = hoverEvidence(node.el);
+    node.via = v >= 2 ? 'hover' : (v === 1 ? 'either' : null);
+  }
+  return node;
+}
+
+// A step is something you press. A section that merely mentions the word is not
+// the control, so a pressable candidate beats a higher-scoring landmark.
+function pickStep(step, tree) {
   if (!step) return null;
-  const m = matchQuery(step.find, roots || []);
-  if (m) return m.node;
+  const m = matchQuery(step.find, tree);
+  if (!m) return null;
+  const live = (n) => n && n.el && isLive(n.el);
+  const pressable = (m.candidates || []).find((c) => c.score >= 2 && live(c.node) && isPressable(c.node.el));
+  const node = pressable ? pressable.node : m.node;
+  return live(node) ? node : null;
+}
+
+function findStep(step) {
+  if (!step) return null;
+  const known = pickStep(step, roots || []);
+  if (known) return known;
   if (step.sel) {
     try {
       const el = document.querySelector(step.sel);
-      if (el && el.getBoundingClientRect().width > 0) return nodeFromEl(el);
+      if (el && isLive(el) && rectOf(el).width > 0) return nodeFromEl(el);
     } catch (_) { /* a selector from an older page — let the words stand */ }
   }
+  // The tree she holds is rebuilt whenever the page changes, but a control that
+  // appeared a moment ago — or one inside a shadow root the body observer cannot
+  // see — may not be in it yet. Look again, fresh, before calling the step missing.
+  const fresh = discoverUIElements(document, { exclude: excludes });
+  const found = pickStep(step, fresh);
+  if (found) {
+    adopt(fresh);
+    return found;
+  }
   return null;
+}
+
+// The control you are after is not on the page — but something on it may open a
+// menu that holds it. An avatar button, a dropdown, a collapsed section: she
+// points at that instead of giving up, and the route starts from there.
+function revealHint(el) {
+  const cls = el.className && typeof el.className === 'string' ? el.className : '';
+  return [el.id, el.getAttribute('data-testid'), el.getAttribute('aria-label'),
+          el.getAttribute('title'), el.getAttribute('aria-controls'), cls].filter(Boolean).join(' ');
+}
+
+function revealScore(el) {
+  // An opener that is already open is not the answer: pressing it again closes
+  // the very panel the route needs, which is how a guide gets stuck pointing at
+  // one button while the user clicks it over and over.
+  if (el.getAttribute('aria-expanded') === 'true') return 0;
+  let score = 0;
+  if (el.hasAttribute('aria-haspopup')) score += 3;
+  if (el.getAttribute('aria-expanded') === 'false') score += 2;
+  if (el.hasAttribute('aria-controls')) score += 2;
+  const hover = hoverEvidence(el);
+  if (hover >= 2) score += 3;             // a level that opens under the pointer
+  else if (hover === 1) score += 1;
+  const hint = revealHint(el);
+  if (/menu|dropdown|popup|popover/i.test(hint)) score += 4;
+  if (/profile|account|avatar|user|switcher/i.test(hint)) score += 4;
+  if (/options|more|ellipsis|kebab|hamburger/i.test(hint)) score += 2;
+  if (!String(el.textContent || '').trim()) score += 1;    // an icon-only control
+  return score;
+}
+
+function findReveal(step, i) {
+  if (i !== revealStep) { revealStep = i; revealTried = new Set(); }
+  const fresh = discoverUIElements(document, { exclude: excludes });
+  const flat = [];
+  const walk = (list) => list.forEach((n) => { flat.push(n); walk(n.children); });
+  walk(fresh);
+  let best = null, bestScore = 0;
+  for (const node of flat) {
+    const el = node.el;
+    if (!el || revealTried.has(el)) continue;   // a tried opener failed
+    const hover = hoverEvidence(el);
+    // A plain link leaves the page, and a plain div is nothing to press — but a
+    // link with a flyout under it and a div that opens on hover are both levels.
+    if (el.tagName === 'A' && hover < 2) continue;
+    if (!isPressable(el) && hover < 2) continue;
+    const s = revealScore(el);
+    if (s <= bestScore) continue;
+    best = node; bestScore = s;
+  }
+  if (!best || bestScore < 4) return null;
+  revealTried.add(best.el);
+  const el = best.el;
+  const pressed = el.tagName === 'BUTTON' || el.hasAttribute('aria-haspopup') || el.getAttribute('aria-expanded') === 'false';
+  // Anything that announces a popup is worked by clicking; the rest of the
+  // hover-opened world is worked by resting on it, and saying "click" there
+  // would send you after a press that does nothing.
+  if (!pressed && hoverEvidence(el) >= 2) return Object.assign({}, best, { via: 'hover' });
+  return best;
+}
+
+// "profile-button" reads badly in a sentence; "profile" reads fine.
+function readable(label) {
+  const s = String(label || '').replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const short = s.replace(/\s*button$/i, '').trim();
+  return short || s || 'the menu';
 }
 
 function nodeFromEl(el) {
@@ -157,63 +329,271 @@ function hintFor(el) {
   return null;
 }
 
-function nodeForClick(el) {
-  if (!el || el.nodeType !== 1 || el.closest('[data-guide-exclude]')) return null;
+// What the press actually travelled through, innermost first. e.target on its own
+// is retargeted to the shadow host when the control lives in a shadow root, which
+// is never the thing you pressed; composedPath is the only honest answer.
+function pressPath(e) {
+  let list = null;
+  try { list = typeof e.composedPath === 'function' ? e.composedPath() : null; } catch (_) { list = null; }
+  if (!list || !list.length) list = e.target ? [e.target] : [];
+  return list.filter((n) => n && n.nodeType === 1);
+}
+
+function nodeForPress(composed) {
+  if (!composed.length) return null;
+  if (closestDeep(composed[0], '[data-guide-exclude]')) return null;
   const flat = flatNodes();
-  for (const n of flat) if (n.el === el) return n;
-  // A control she has not discovered — because it was hidden when the page was
-  // last read, or because it appeared a moment ago — is still the thing you
-  // pressed: its own words beat the section it happens to sit in.
+  // The deepest control she knows that the press went through: a button's label
+  // is a span, a link wraps an icon, and neither is the control itself.
+  for (const el of composed) {
+    for (const n of flat) if (n.el === el) return n;
+  }
+  const el = composed[0];
   if (isPressable(el)) return nodeFromEl(el);
-  // Otherwise the nearest element she knows that holds the press.
   let best = null;
   for (const n of flat) {
-    if (!n.el || !n.el.contains || !n.el.contains(el)) continue;
-    if (!best || best.el.contains(n.el)) best = n;
+    if (composed.indexOf(n.el) < 0) continue;
+    if (!best || (best.el.contains && best.el.contains(n.el))) best = n;
   }
   return best || nodeFromEl(el);
 }
 
-function stepText(label, i, n, moved) {
+// A framework that re-renders throws the node away and puts an identical one in
+// its place. The words, the role and the spot on screen are the same control;
+// only the object is new, and refusing it would strand the route on a step you
+// already did. While the old node is still live, only the same spot counts —
+// two buttons with one name are still two buttons.
+function controlKey(el) {
+  if (!el || !el.getAttribute) return '';
+  const name = el.getAttribute('aria-label') || el.getAttribute('data-testid') || el.id || '';
+  const text = String(el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 48);
+  return [el.getAttribute('role') || el.tagName, name, text].join('|').toLowerCase();
+}
+
+function sameControl(a, b) {
+  if (!a || !b || a === b) return false;
+  const key = controlKey(a);
+  if (!key || key !== controlKey(b)) return false;
+  if (!isLive(a) || !isLive(b)) return true;
+  const ra = rectOf(a), rb = rectOf(b);
+  if (!ra || !rb || !ra.width || !rb.width) return false;
+  return Math.abs(ra.left - rb.left) < 12 && Math.abs(ra.top - rb.top) < 12
+    && Math.abs(ra.width - rb.width) < 8 && Math.abs(ra.height - rb.height) < 8;
+}
+
+function handlePress(el, composed) {
+  if (!el) return;
+  clearTimeout(hoverTimer); hoverTimer = null;
+  if (teaching) { const n = nodeForPress(composed); if (n) teachNote(n, el); return; }
+  if (!path.active) return;
+  refreshHeld();                       // the page may have rebuilt the control
+  const node = nodeForPress(composed); // resolve against the tree refreshHeld adopted
+  if (!node) return;
+  if (path.clicked(node.el, composed)) { armSettle(); return; }
+  const held = path.node;
+  if (held && sameControl(held.el, node.el) && path.pressed()) armSettle();
+}
+
+// ---- levels that open under the pointer --------------------------------------
+// A flyout never emits a click: the pointer arrives, the next level appears, and
+// that is the whole action. So a hover on what she is holding is followed by a
+// short dwell and then a look at what the page became. Nothing is assumed — the
+// route only moves when the control it was waiting for is actually there.
+function onUserHover(e) {
+  if (!path.active && !teaching) return;
+  const composed = pressPath(e);
+  if (!composed.length) return;
+  const el = composed[0];
+  if (closestDeep(el, '[data-guide-exclude]')) return;
+  if (teaching) { armHoverProbe(composed, true); return; }
+  const st = path.status();
+  if (!st) return;
+  if (st.awaiting === 'missing') {
+    // No opener was worth pointing at, but the pointer may have found one.
+    if (isPressable(el) || hoverEvidence(el)) armHoverProbe(composed, false);
+    return;
+  }
+  if (path.holds(el, composed)) armHoverProbe(composed, false);
+}
+
+// Is the pointer still resting on the thing she is holding? The control itself
+// may no longer be under it — the flyout that just opened is a sibling — but the
+// row that owns it still is.
+function stillHovered(el) {
+  let n = el, hops = 0;
+  while (n && n.nodeType === 1 && hops++ < 8) {
+    try { if (n.matches(':hover')) return true; } catch (_) { return false; }
+    n = parentEl(n);
+  }
+  return false;
+}
+
+function armHoverProbe(composed, teach) {
+  clearTimeout(hoverTimer);
+  const st = path.status();
+  const armedFor = st ? st.awaiting : null;
+  const sizeBefore = queue.size;
+  const started = Date.now();
+  const tick = () => {
+    hoverTimer = null;
+    if (teach) { noteHover(composed, sizeBefore); return; }
+    if (takeHoverStep(composed, armedFor)) return;
+    // A flyout that fades in is not there at 260ms, and a stylesheet transition
+    // only advances when the page paints. Keep looking while the pointer is
+    // still resting on it, rather than deciding the hover did nothing.
+    const now = path.status();
+    const held = path.held;
+    const resting = held ? stillHovered(held) : false;
+    if (Date.now() - started < HOVER_WINDOW_MS && now && now.awaiting === armedFor && resting) {
+      hoverTimer = setTimeout(tick, HOVER_RETRY_MS);
+    }
+  };
+  hoverTimer = setTimeout(tick, HOVER_DWELL_MS);
+}
+
+function takeHoverStep(composed, armedFor) {
+  if (!path.active) return false;
+  const st = path.status();
+  // The route moved on while the pointer rested — a press landed, or a reveal
+  // became the step itself. Either way this hover is no longer the action.
+  if (!st || st.awaiting !== armedFor) return true;
+  if (st.awaiting === 'missing') { path.retry(); return true; }
+  if (st.awaiting !== 'click' && st.awaiting !== 'reveal') return true;
+  if (!path.holds(composed[0], composed)) return true;
+  const step = path.plan.steps[st.i];
+  if (st.awaiting === 'reveal') {
+    if (resolveStep(step) && path.opened()) { armSettle(); return true; }
+    return false;
+  }
+  // A step she learned as a hover is worked by hovering, full stop.
+  if (step && step.via === 'hover') { if (path.pressed()) armSettle(); return true; }
+  const next = path.plan.steps[st.i + 1];
+  const opensUnderPointer = !!(path.node && path.node.via === 'hover');
+  // The last level of a route that opens under the pointer is arrived at by
+  // resting on it; there is nothing after it to wait for.
+  if (!next) { if (opensUnderPointer && path.pressed()) armSettle(); return true; }
+  if (nextPresent) return true;
+  if (resolveStep(next) && path.pressed()) { armSettle(); return true; }
+  return false;
+}
+
+// While she is watching you do it, a hover that opens a level is a step too —
+// otherwise a route through a nav bar would be recorded with its middle missing.
+function noteHover(composed, sizeBefore) {
+  if (!teaching) return;
+  const node = nodeForPress(composed);
+  if (!node || !hoverEvidence(node.el)) return;
+  rebuild();
+  if (queue.size <= sizeBefore) return;      // nothing opened; the pointer was passing through
+  teachNote(node, node.el, 'hover');
+}
+
+function onUserClick(e) {
+  lastClickAt = Date.now();
+  const composed = pressPath(e);
+  handlePress(composed[0], composed);
+}
+
+// Enter or Space on the control she is holding is the same press, and half the
+// web drives its menus that way. Enter in a text field is typing, not a press.
+function onUserKey(e) {
+  if (!e || (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar')) return;
+  const el = e.target;
+  if (!el || el.nodeType !== 1) return;
+  const tag = el.tagName;
+  if (tag === 'TEXTAREA' || el.isContentEditable) return;
+  if (tag === 'INPUT' && !/^(button|submit|checkbox|radio)$/i.test(el.type || 'text')) return;
+  if (!path.active && !teaching) return;
+  const composed = pressPath(e);
+  handlePress(el, composed.length ? composed : [el]);
+}
+
+// Some controls act on pointerdown and never emit a click at all — and a menu
+// that unmounts its own item on press takes the click event with it. Watch the
+// press itself, and only use it when no click followed.
+function onPointerDown(e) {
+  if (!e || (!path.active && !teaching)) return;
+  pressDown = { x: e.clientX, y: e.clientY, t: Date.now(), composed: pressPath(e) };
+}
+
+function onPointerUp(e) {
+  const d = pressDown;
+  pressDown = null;
+  if (!d || !d.composed.length) return;
+  if (Math.abs(e.clientX - d.x) > 8 || Math.abs(e.clientY - d.y) > 8) return;   // a drag
+  if (Date.now() - d.t > 1500) return;                                        // a long press
+  setTimeout(() => {
+    if (lastClickAt >= d.t) return;              // the click arrived; it already counted
+    handlePress(d.composed[0], d.composed);
+  }, 0);
+}
+
+function stepText(label, i, n, moved, via) {
+  const hover = via === 'hover' || via === 'either';
+  const act = hover ? 'hover over' : 'click';
+  const Act = hover ? 'Hover over' : 'Click';
   let body;
-  if (n <= 1) body = `Click “${label}”`;
-  else if (i === 0) body = `First, click “${label}” — I'll wait for you`;
-  else if (i === n - 1) body = `Last one: “${label}”`;
-  else body = `Now “${label}” — step ${i + 1} of ${n}`;
-  return body + (moved ? ', and it is below the fold — following it down' : '') + '.';
+  if (n <= 1) body = `${Act} “${label}”`;
+  else if (i === 0) body = `First, ${act} “${label}” — I'll wait for you`;
+  else if (i === n - 1) body = `Last one: ${act} “${label}”`;
+  else body = `Now ${act} “${label}” — step ${i + 1} of ${n}`;
+  if (moved) body += ', and it is below the fold — following it down';
+  // A caret says a level opens here, but not whether the pointer or the click
+  // does it: offer the hover and leave the click standing by.
+  return body + (via === 'either' ? '. If nothing opens, click it.' : '.');
 }
 
 // A step below the fold is a step you cannot press. Scrolling is the only thing
 // she does to a page besides looking at it, and the pump keeps re-sampling the
-// live rect, so she tracks the control the whole way down.
+// live rect, so she tracks the control the whole way down — including a control
+// that lives in a frame, where the frame itself may be the thing off screen.
 function bringIntoView(node) {
-  const el = node && node.el;
-  if (!el || typeof el.scrollIntoView !== 'function') return false;
-  const b = el.getBoundingClientRect();
-  if (b.top >= 0 && b.left >= 0 && b.bottom <= window.innerHeight && b.right <= window.innerWidth) return false;
-  try { el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' }); }
-  catch (_) { return false; }
-  return true;
+  return !!(node && node.el) && scrollIntoViewDeep(node.el);
 }
 
 const path = createPathRunner({
   resolve: resolveStep,
   goTo: (node) => goto(node, { instant: false }),
-  onStep: ({ node, i, plan }) => {
+  findReveal,
+  onStep: ({ step, node, i, plan }) => {
     stopCycle();
+    lastMissKey = '';
+    startWatch();
+    nextPresent = !!pickStep(plan.steps[i + 1], roots || []);
     const moved = bringIntoView(node);
-    announce(stepText(node.label, i, plan.steps.length, moved), 'ok');
+    const via = (step && step.via) || node.via;
+    announce(stepText(node.label, i, plan.steps.length, moved, via), 'ok');
     emit();
   },
-  onMiss: (step) => {
-    announce(`I can't find “${step.find}” here. Open it and I'll follow — or say next to skip it.`, 'error');
+  onMiss: (step, i, plan, info) => {
+    // Two kinds of missing: the control is nowhere, or it is inside something
+    // that is not open yet. The second one has an answer — open it. The tried-set
+    // guarantees it is a different opener each time, so this is never the same
+    // sentence twice, and never a silent re-point at the button you just pressed.
+    const reveal = info && info.reveal;
+    const key = (reveal ? 'r' : 'm') + '|' + i + '|' + step.find + '|' + (reveal ? reveal.label : '');
+    if (key === lastMissKey) { emit(); return; }
+    lastMissKey = key;
+    startWatch();
+    if (reveal) {
+      bringIntoView(reveal);
+      const act = reveal.via === 'hover'
+        ? `rest your pointer on ${readable(reveal.label)} — the next level opens under it`
+        : `click ${readable(reveal.label)} to open it`;
+      announce(`“${step.find}” is not out yet — ${act}, and I will take you from there.`, 'ok');
+      emit();
+      return;
+    }
+    announce(`I can't find “${step.find}” here. Open the panel holding it and I'll pick it up — or say next to skip it, or teach me the way.`, 'error');
     emit();
   },
   onDone: (plan) => {
+    stopWatch();
+    lastMissKey = '';
     announce(`That's the place — ${plan.name}. Say so if it wasn't what you meant.`, 'ok');
     emit();
   },
-  onEvent: () => emit(),
+  onEvent: (kind) => { if (kind === 'start') { lastMissKey = ''; startWatch(); } emit(); },
 });
 
 function chainPlan(text) {
@@ -238,26 +618,28 @@ function teachStart(goal) {
   teaching = { goal: goal || '', host: hostName(), steps: [] };
   stopCycle();
   path.stop();
+  startWatch();
   announce('Watching. Do it the way you would — say done when you are through.', 'ok');
   emit();
   return teaching;
 }
 
-function teachNote(node, el) {
+function teachNote(node, el, via) {
   if (!teaching) return;
   const last = teaching.steps[teaching.steps.length - 1];
   if (last && last.find === node.label) return;
   if (teaching.steps.length >= 8) { teachStop(); return; }
-  teaching.steps.push({ find: node.label, sel: hintFor(el) });
+  teaching.steps.push({ find: node.label, sel: hintFor(el), via: via || null });
   emit();
 }
 
 function teachStop() {
   const rec = teaching;
   teaching = null;
+  if (!path.active) stopWatch();
   if (!rec) return null;
   if (!rec.steps.length) {
-    announce('Nothing to remember — I did not see a click.', 'error');
+    announce('Nothing to remember — I did not see you open or press anything.', 'error');
     emit();
     return null;
   }
@@ -276,17 +658,6 @@ function teachStop() {
   announce(`Got it — ${plan.steps.length} step${plan.steps.length > 1 ? 's' : ''}: ${plan.steps.map((s) => `“${s.find}”`).join(', ')}. Ask me how and I'll walk you there.`, 'ok');
   emit();
   return plan;
-}
-
-function onUserClick(e) {
-  const el = e && e.target;
-  if (!el) return;
-  const node = nodeForClick(el);
-  if (teaching) { if (node) teachNote(node, el); return; }
-  if (!path.active || !node) return;
-  // Her click test is containment, so a press on anything inside the control
-  // counts — real buttons put their label in a span, and links wrap icons.
-  if (path.clicked(node.el)) armSettle();
 }
 
 function setPaths(list) {
@@ -356,7 +727,9 @@ async function say(raw, opts) {
     case 'cycle': return { spoken: 'cycling', result: startCycle() };
     case 'stop': {
       if (path.active) {
+        clearTimeout(settleTimer); settleTimer = null; settleUntil = 0;
         const plan = path.stop();
+        stopWatch();
         announce(`Done with “${plan.name}”, then.`, 'ok');
         return { spoken: 'stopped', result: { ok: true, path: null } };
       }
@@ -477,13 +850,20 @@ function init(theBridge, opts = {}) {
 
   // Capture, so a site that stops propagation on its own buttons still cannot hide
   // a click from her: she is watching whether you did the step, not who heard it.
-  if (!clicking) {
-    document.addEventListener('click', onUserClick, true);
-    clicking = true;
-  }
+  wirePress(document);
 
   if (typeof MutationObserver !== 'undefined') {
-    observer = new MutationObserver(scheduleRebuild);
+    // A class or style change can turn any element into something clickable, so
+    // the page's styles are re-read when it happens.
+    observer = new MutationObserver((records) => {
+      for (const r of records) {
+        if (r.type === 'attributes' && (r.attributeName === 'class' || r.attributeName === 'style')) {
+          invalidateStyleCache();
+          break;
+        }
+      }
+      scheduleRebuild();
+    });
     observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style', 'hidden'] });
     observing = true;
   }

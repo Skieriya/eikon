@@ -133,6 +133,19 @@
     .recorder-link:hover, .recorder-link:focus { border-color: #38bdf8; color: #38bdf8; }
     .recorder-link small { font-size: 0.68rem; font-weight: 400; color: #94a3b8; }
     .recorder-link small:empty { display: none; }
+    /* The pages the add-on is tested against: a plain site, a re-rendering one,
+       a page that hides its own controls, and one whose levels open on hover. */
+    .fixtures-link {
+      position: absolute; right: 2rem; top: 5.6rem; z-index: 6;
+      display: flex; flex-direction: column; gap: 0.3rem;
+      padding: 0.55rem 0.85rem; border-radius: 12px; text-decoration: none;
+      background: rgba(15, 23, 42, 0.55); border: 1px solid rgba(148, 163, 184, 0.25);
+      backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+      color: #e2e8f0; font-size: 0.78rem; font-weight: 600;
+    }
+    .fixtures-link span { font-size: 0.66rem; font-weight: 400; color: #94a3b8; }
+    .fixtures-link a { color: #cbd5f5; text-decoration: none; }
+    .fixtures-link a:hover, .fixtures-link a:focus { color: #38bdf8; text-decoration: underline; }
     .guide-console {
       position: absolute; bottom: 1.25rem; left: 2rem;
       z-index: 7; display: flex; align-items: center; gap: 0.4rem;
@@ -201,6 +214,16 @@
     <a id="recorderLink" class="recorder-link" href="./recorder.html">
       Record animation<small id="takeCount"></small>
     </a>
+
+    <!-- The pages the add-on is tested against. They live in the build, so they
+         need `python tools/build_extension.py` before they answer. -->
+    <nav class="fixtures-link" aria-label="Guide test pages">
+      <span>Guide test pages</span>
+      <a href="./build/firefox/_test/fixture.html">Plain site</a>
+      <a href="./build/firefox/_test/spa.html">Re-rendering SPA</a>
+      <a href="./build/firefox/_test/stuck.html">Hidden controls</a>
+      <a href="./build/firefox/_test/hover.html">Levels that open on hover</a>
+    </nav>
 
     <div id="loader">
       <div class="spinner"></div>

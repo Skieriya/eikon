@@ -12,12 +12,12 @@ queue, matching and animation logic lives here.
 
 | file | role |
 | --- | --- |
-| `discovery.js` | Queries the live DOM and builds a **tree** of UI elements. Landmarks (nav/section/header/footer) hold their controls as **subcontents**, but every control is also its own addressable node. Each node gets a `label`, an `id`, and an `aliases` list (its own words + synonyms like faq↔help↔support). |
+| `discovery.js` | Queries the live DOM and builds a **tree** of UI elements. Landmarks (nav/section/header/footer) hold their controls as **subcontents**, but every control is also its own addressable node. Each node gets a `label`, an `id`, and an `aliases` list (its own words + synonyms like faq↔help↔support). Two passes: the **semantic** one (marked-up controls) and a **behavioural** one, which treats an element with a click handler, focusability or a `pointer` cursor as a control even when it is a plain `<div>`. It also walks **shadow roots** (open, and the closed ones only an add-on can see) and **same-origin frames**, and it judges whether a control opens a level **under the pointer** (a `:hover` rule that reveals something, an inline mouse handler, a caret). |
 | `circularQueue.js` | Flattens the tree depth-first and wraps it in a **circular queue**: `next`/`prev` cycle the whole page with no dead ends, `jumpTo(id)` snaps to any node. A panel and its subcontents sit adjacent in the ring. |
 | `gazeController.js` | Converts an element's **screen center → clip space** and glides the model's gaze there with an ease-in-out tween while holding mouse-follow. One `bridge.gesture()` kicks off a guiding motion; head, eyes and arm all track the same vector, so they sweep to the target together. |
 | `commandRouter.js` | Parses natural language into intents (`goto` / `goal` / `next` / `prev` / `cycle` / `stop` / `list` / `teach` / `done`) and fuzzy-matches the target (exact alias, substring, prefix, Levenshtein), descending into subcontents so "email" finds the field inside the form. |
 | `paths.js` | Multi-level routes: a plan is an ordered list of steps, each resolved by fuzzy text matching with a saved-selector fallback. Ships a small table of known flows (`RECIPES`) and matches a question against them or against what the host taught her. |
-| `index.js` | Wires it all: waits for the bridge, builds the queue, exposes `window.UIGuide`, re-discovers on DOM changes, runs the route state machine, watches for the click that completes a step, and binds the optional command box / controls. |
+| `index.js` | Wires it all: waits for the bridge, builds the queue, exposes `window.UIGuide`, re-discovers on DOM changes, runs the route state machine, watches for the press — or the hover — that completes a step, and binds the optional command box / controls. |
 
 ## Public API (`window.UIGuide`)
 
@@ -27,6 +27,10 @@ UIGuide.say('next');           // step the circular queue
 UIGuide.startCycle(2200);      // auto-advance every 2.2s
 UIGuide.jumpTo('faq');         // go straight to a node by id
 UIGuide.status();              // { count, current, cycling, items, path, teaching, known }
+                                //   path: { name, i, n, awaiting, reveal, reveals, via, steps }
+                                //     via: 'click' | 'hover' | 'either' — how the held
+                                //          control is worked on this page
+                                //     awaiting: 'click' | 'hover' | 'reveal' | 'settle'
 UIGuide.elements;              // the discovered tree
 ```
 
@@ -48,8 +52,13 @@ How a step works:
 
 1. she resolves the step's words against the live DOM (fuzzy match, plus a saved
    selector as a fallback) and points at what she found;
-2. she **waits for your click** — a capture-phase listener on the document, so a site
-   that stops propagation on its own buttons cannot hide the click from her;
+2. she says how the control is worked and **waits for you** — a capture-phase
+   listener on the document, so a site that stops propagation on its own buttons
+   cannot hide the press from her. Most controls are clicked; a level that opens
+   **under the pointer** is hovered instead, and she watches for the pointer to
+   rest on it rather than for a press. When the page gives no proof either way
+   (a caret says *a level opens here*, but not whether the pointer or the click
+   does it) she offers the hover and leaves the click standing by;
 3. once the click lands she lets the page settle (550 ms quiet, 3 s cap, re-armed by
    DOM changes) and then resolves the *next* step against whatever the page became;
 4. a step she cannot find is not fatal — she says so, and retries it whenever the page

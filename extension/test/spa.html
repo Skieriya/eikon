@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Northbeam Chat</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- A page shaped like the modern web apps she has to work inside: the control
+     you want is behind a menu that does not exist yet, and the rows inside it
+     are plain <div>s with a click handler and nothing else — no role, no href,
+     no button tag. Nothing here announces itself as interactive, which is
+     exactly why a route has to be walked rather than searched.
+
+         http://127.0.0.1:8000/build/firefox/_test/spa.html
+
+     It stands in for ChatGPT's own shape: an avatar button with no words on it,
+     a menu that is mounted on click, and a settings page whose rows are
+     unlabelled click targets. -->
+<style>
+  body { margin: 0; background: #212121; color: #ececec;
+    font: 15px/1.6 system-ui, "Segoe UI", Roboto, sans-serif; }
+  .app { display: flex; height: 100vh; }
+  .side { width: 240px; flex: 0 0 240px; background: #171717; padding: 12px;
+    display: flex; flex-direction: column; gap: 6px; }
+  .side a, .side .row-item { color: #d8d8d8; text-decoration: none;
+    padding: 8px 10px; border-radius: 8px; font-size: 14px; }
+  .row-item { cursor: pointer; }
+  .row-item:hover { background: #2f2f2f; }
+  .spacer { flex: 1; }
+  /* The profile button: an avatar and nothing else. No text, no alt, no
+     aria-label — the only clues are aria-haspopup and the test id. */
+  .avatar-btn { width: 36px; height: 36px; border-radius: 50%; border: 0;
+    padding: 0; background: #5b5b5b; cursor: pointer; display: block; }
+  .avatar-btn img { width: 36px; height: 36px; border-radius: 50%; display: block; }
+  .main { flex: 1; padding: 24px 30px; overflow: auto; }
+  .menu { position: fixed; left: 200px; bottom: 60px; z-index: 90; min-width: 240px;
+    background: #2f2f2f; border-radius: 12px; padding: 6px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.5); }
+  .menu [role="menuitem"] { padding: 9px 12px; border-radius: 8px; cursor: pointer;
+    font-size: 14px; }
+  .menu [role="menuitem"]:hover { background: #454545; }
+  .setnav { display: flex; flex-direction: column; gap: 2px; width: 210px;
+    border-right: 1px solid #333; padding-right: 16px; }
+  .mem-row { display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 0; border-bottom: 1px solid #333; max-width: 520px; }
+  .switch { width: 40px; height: 22px; border-radius: 11px; border: 0;
+    background: #555; cursor: pointer; position: relative; }
+  h1 { font-size: 20px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="side">
+    <a href="#new" class="row-item">New chat</a>
+    <a href="#search" class="row-item">Search chats</a>
+    <div class="spacer"></div>
+    <button class="avatar-btn" id="profile" data-testid="profile-button"
+            aria-haspopup="menu" aria-expanded="false" title="">
+      <img alt="" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='36' height='36'><rect width='36' height='36' fill='%235b5b5b'/><circle cx='18' cy='14' r='6' fill='%23cfcfcf'/><path d='M6 36c0-7 5-11 12-11s12 4 12 11z' fill='%23cfcfcf'/></svg>">
+    </button>
+  </div>
+  <div class="main" id="view">
+    <h1>Northbeam Chat</h1>
+    <p>Ask anything. Your conversations live in the sidebar.</p>
+  </div>
+</div>
+
+<script>
+  // Three levels, each of which exists only after the level above is clicked.
+  // Nothing below is in the DOM at first — this is the shape of app that
+  // defeats a single search and needs a walk.
+  (function () {
+    const view = document.getElementById('view');
+    const profile = document.getElementById('profile');
+    let menu = null;
+
+    const row = (text, on) => {
+      const d = document.createElement('div');
+      d.className = 'row-item';
+      d.textContent = text;
+      d.addEventListener('click', on);
+      return d;
+    };
+
+    const openMenu = () => {
+      if (menu) return;
+      menu = document.createElement('div');
+      menu.className = 'menu';
+      menu.setAttribute('role', 'menu');
+      const item = (text, on) => {
+        const d = document.createElement('div');
+        d.setAttribute('role', 'menuitem');
+        d.textContent = text;
+        d.addEventListener('click', on);
+        return d;
+      };
+      menu.appendChild(item('Upgrade plan', () => {}));
+      menu.appendChild(item('Settings', () => { closeMenu(); settings(); }));
+      menu.appendChild(item('Log out', () => {}));
+      document.body.appendChild(menu);
+      profile.setAttribute('aria-expanded', 'true');
+      document.addEventListener('click', outside, true);
+    };
+    const closeMenu = () => {
+      if (!menu) return;
+      menu.remove();
+      menu = null;
+      profile.setAttribute('aria-expanded', 'false');
+      document.removeEventListener('click', outside, true);
+    };
+    const outside = (e) => { if (e.target !== profile && !(menu && menu.contains(e.target))) closeMenu(); };
+    profile.addEventListener('click', (e) => { e.stopPropagation(); menu ? closeMenu() : openMenu(); });
+
+    const settings = () => {
+      view.textContent = '';
+      const wrap = document.createElement('div');
+      wrap.style.display = 'flex';
+      wrap.style.gap = '24px';
+      const nav = document.createElement('div');
+      nav.className = 'setnav';
+      nav.appendChild(row('General', () => { panel('General'); }));
+      nav.appendChild(row('Personalization', () => { panel('Personalization'); }));
+      nav.appendChild(row('Data controls', () => { panel('Data controls'); }));
+      nav.appendChild(row('Account', () => { panel('Account'); }));
+      const body = document.createElement('div');
+      body.id = 'setbody';
+      wrap.appendChild(nav);
+      wrap.appendChild(body);
+      view.appendChild(wrap);
+      panel('General');
+    };
+
+    const panel = (title) => {
+      const body = document.getElementById('setbody');
+      if (!body) return;
+      body.textContent = '';
+      const h = document.createElement('h1');
+      h.textContent = title;
+      body.appendChild(h);
+      if (title === 'Personalization') {
+        const r = document.createElement('div');
+        r.className = 'mem-row';
+        const s = document.createElement('span');
+        s.textContent = 'Memory';
+        const sw = document.createElement('button');
+        sw.className = 'switch';
+        sw.setAttribute('role', 'switch');
+        sw.setAttribute('aria-checked', 'false');
+        sw.setAttribute('aria-label', 'Memory');
+        sw.addEventListener('click', () => {
+          sw.setAttribute('aria-checked', sw.getAttribute('aria-checked') === 'true' ? 'false' : 'true');
+        });
+        r.appendChild(s); r.appendChild(sw);
+        body.appendChild(r);
+        const r2 = document.createElement('div');
+        r2.className = 'mem-row';
+        const s2 = document.createElement('span');
+        s2.textContent = 'Chat history';
+        const sw2 = document.createElement('button');
+        sw2.className = 'switch';
+        sw2.setAttribute('role', 'switch');
+        sw2.setAttribute('aria-checked', 'true');
+        sw2.setAttribute('aria-label', 'Chat history');
+        r2.appendChild(s2); r2.appendChild(sw2);
+        body.appendChild(r2);
+      }
+    };
+
+    window.__spa = {
+      openMenu, closeMenu, settings, panel,
+      state() {
+        return {
+          menu: !!menu,
+          menuItems: menu ? Array.from(menu.querySelectorAll('[role=menuitem]')).map((e) => e.textContent) : [],
+          rows: Array.from(document.querySelectorAll('.row-item')).map((e) => e.textContent),
+          settingRows: Array.from(document.querySelectorAll('.setnav .row-item')).map((e) => e.textContent),
+          memoryRows: Array.from(document.querySelectorAll('.mem-row span')).map((e) => e.textContent),
+        };
+      },
+    };
+  })();
+</script>
+<script>
+  window.__hutaoRaf = 'manual';
+</script>
+<script>
+  // Stand in for the add-on's background page, exactly as fixture.html does.
+  (function () {
+    const KEY = 'paths.v1';
+    const saved = localStorage.getItem('fx.' + KEY);
+    const store = saved ? { [KEY]: JSON.parse(saved) } : {};
+    const listeners = [];
+    const storageListeners = [];
+    const stub = {
+      runtime: {
+        getURL(name) { return new URL('../' + name, document.baseURI).href; },
+        onMessage: { addListener(fn) { listeners.push(fn); } },
+        sendMessage(msg) {
+          const out = listeners.map((fn) => fn(msg)).filter((r) => r !== undefined);
+          return Promise.resolve(out.length ? out[0] : undefined);
+        },
+      },
+      storage: { local: {
+        get(key) { return Promise.resolve({ [key]: store[key] }); },
+        set(obj) {
+          const changes = {};
+          for (const k in obj) changes[k] = { oldValue: store[k], newValue: obj[k] };
+          Object.assign(store, obj);
+          localStorage.setItem('fx.' + KEY, JSON.stringify(store[KEY] || []));
+          storageListeners.forEach((fn) => fn(changes, 'local'));
+          return Promise.resolve();
+        },
+      } },
+    };
+    stub.storage.onChanged = { addListener(fn) { storageListeners.push(fn); } };
+    window.browser = stub;
+    window.__fxStore = store;
+    const req = new XMLHttpRequest();
+    req.open('GET', '../background.js', false);
+    req.send(null);
+    if (req.status === 200) new Function('browser', req.responseText)(stub);
+  })();
+</script>
+<script src="../content.js"></script>
+<script>
+  window.__spaGuide = {
+    // What she is pointing at right now, and what she says about it.
+    status() {
+      const g = window.UIGuide;
+      const p = g && g.pathStatus();
+      const frame = document.querySelector('iframe[src*="hutao.html"]');
+      const caption = frame && frame.contentWindow
+        ? frame.contentWindow.document.getElementById('caption').textContent : null;
+      return { path: p, caption, known: g ? g.knownPaths.length : 0 };
+    },
+    // The label of the element she is aiming at, and what is inside it.
+    target() {
+      const g = window.UIGuide;
+      const n = g && g.queue ? g.queue.current : null;
+      return n ? { label: n.label, text: (n.el.textContent || '').trim().slice(0, 60) } : null;
+    },
+  };
+</script>
+</body>
+</html>

@@ -134,9 +134,11 @@
   }
 
   function forwardRect() {
-    if (!guide.held || !guide.target || !guide.target.isConnected) return;
-    const b = guide.target.getBoundingClientRect();
-    if (!b.width || !b.height) return;
+    if (!guide.held || !guide.target || !isLive(guide.target)) return;
+    // rectOf, not getBoundingClientRect: the target may live inside a frame, and
+    // its own rect is in that frame's viewport, not the one she is drawn over.
+    const b = rectOf(guide.target);
+    if (!b || !b.width || !b.height) return;
     // Viewport CSS pixels, which is her canvas's own space: no conversion here.
     const key = (b.left | 0) + ',' + (b.top | 0) + ',' + (b.width | 0) + ',' + (b.height | 0);
     if (key === guide.lastRect && guide.sentSeq === guide.seq) return;
@@ -171,12 +173,7 @@
   // it used to be. This is the only thing the add-on ever does to a page, and it
   // is a scroll — no clicks, no typing, no hidden elements.
   function reveal(el) {
-    if (!el || typeof el.scrollIntoView !== 'function') return false;
-    const b = el.getBoundingClientRect();
-    if (b.top >= 0 && b.left >= 0 && b.bottom <= window.innerHeight && b.right <= window.innerWidth) return false;
-    try { el.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' }); }
-    catch (_) { return false; }
-    return true;
+    return !!el && scrollIntoViewDeep(el);
   }
 
   function run(text) {
@@ -218,12 +215,12 @@
   let lastSig = '', lastRoute = '', reportQueued = 0;
   function routeSig(s) {
     const p = s.path, t = s.teaching;
-    return (p ? [p.i, p.n, p.awaiting, p.label].join('|') : '') + '#' + (t ? (t.steps || []).length : '');
+    return (p ? [p.i, p.n, p.awaiting, p.via, p.label].join('|') : '') + '#' + (t ? (t.steps || []).length : '');
   }
   function sig(s) {
     const p = s.path;
     return [s.count, s.cycling ? 1 : 0, s.current ? s.current.label : '',
-      p ? [p.name, p.i, p.n, p.awaiting, p.label].join('|') : '',
+      p ? [p.name, p.i, p.n, p.awaiting, p.via, p.label].join('|') : '',
       s.teaching ? 'T' + (s.teaching.steps || []).length : '', s.known || 0].join('~');
   }
 

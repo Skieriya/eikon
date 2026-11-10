@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Lumen — the page whose levels open on hover</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- A guide that only waits for clicks dies on a nav bar. Here the next level
+     exists in the markup from the start but is visibility:hidden until the
+     pointer rests on its parent, so:
+
+       1. nothing is mounted on hover — the DOM never mutates, and a mutation
+          observer has nothing to report;
+       2. no click ever lands on "Platform" or "Data sources" — they are links
+          and rows whose only job is to be rested on;
+       3. the flyout is nested two deep, and the leaf at the bottom IS a click.
+
+     Beside it, "Reports" opens a menu that is mounted by a mouseenter handler,
+     and the workspace avatar is an ordinary click menu — so one page carries
+     all three ways a level can open.
+
+         http://127.0.0.1:8000/build/firefox/_test/hover.html
+
+     Ask her:  platform → data sources → connectors
+     Or:       reports → scheduled
+     She must say "hover over", wait for the pointer, and walk down. -->
+<style>
+  :root {
+    --bg: #080d1a; --surface: #101a30; --raise: #16233d; --line: #223354;
+    --ink: #e8eefc; --muted: #8ea2c6; --cyan: #35e0d0; --amber: #ffb020;
+    --magenta: #ff4d9d; --blue: #4c8dff; --ok: #46d39a; --warn: #ffb020;
+    --danger: #ff5f6d; --info: #4c8dff; --nav: 58px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background:
+      radial-gradient(900px 420px at 12% -8%, rgba(53,224,208,.16), transparent 60%),
+      radial-gradient(760px 420px at 92% 4%, rgba(255,77,157,.13), transparent 62%),
+      var(--bg);
+    color: var(--ink); font: 15px/1.6 system-ui, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+  }
+  ::-webkit-scrollbar { width: 11px; height: 11px; }
+  ::-webkit-scrollbar-track { background: #0b1222; }
+  ::-webkit-scrollbar-thumb { background: #26395c; border-radius: 7px; border: 2px solid #0b1222; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--cyan); }
+
+  /* ---- the bar, and the levels hanging off it ------------------------------ */
+  .topnav {
+    position: fixed; top: 0; left: 0; right: 0; height: var(--nav); z-index: 60;
+    display: flex; align-items: center; gap: 6px; padding: 0 18px;
+    background: rgba(10,16,31,.86); backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--line);
+  }
+  .brand { display: flex; align-items: center; gap: 9px; font-weight: 700;
+    letter-spacing: .3px; margin-right: 16px; }
+  .brand i { width: 11px; height: 11px; border-radius: 3px; transform: rotate(45deg);
+    background: linear-gradient(135deg, var(--cyan), var(--blue));
+    box-shadow: 0 0 16px rgba(53,224,208,.7); }
+  .nav-item { position: relative; }
+  .nav-link {
+    display: block; padding: 8px 13px; border-radius: 9px; color: #c6d5f2;
+    text-decoration: none; font-size: 14px; font-weight: 550; cursor: pointer;
+    border: 0; background: none; font-family: inherit;
+  }
+  .nav-link:hover { color: #fff; background: var(--raise); }
+  .nav-item:hover > .nav-link { color: #fff; background: var(--raise); }
+  .caret { display: inline-block; margin-left: 6px; font-size: 10px; color: var(--muted); }
+
+  /* The whole point: present in the DOM, invisible until the pointer arrives.
+     No script runs, no node is added, no attribute changes. */
+  .dropdown {
+    position: absolute; top: calc(100% + 8px); left: 0; min-width: 268px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+    padding: 7px; box-shadow: 0 26px 60px rgba(0,0,0,.6);
+    visibility: hidden; opacity: 0; transform: translateY(-7px); pointer-events: none;
+    transition: transform .16s ease;
+    /* The rows below are positioned, so without a z-index of their own the
+       flyout that opens from the first row is painted UNDER them and the
+       pointer lands on the row underneath instead of the leaf. */
+    z-index: 61;
+  }
+  .nav-item:hover > .dropdown,
+  .nav-item:focus-within > .dropdown {
+    visibility: visible; opacity: 1; transform: none; pointer-events: auto;
+  }
+  .drop-head { font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--muted); padding: 7px 11px 5px; }
+  .fly-item { position: relative; }
+  .fly-link, .drop-link {
+    display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+    padding: 9px 11px; border-radius: 10px; border: 0; background: none;
+    color: #dbe6fb; font-family: inherit; font-size: 14px; font-weight: 550;
+    line-height: 1.4; text-decoration: none; cursor: pointer;
+  }
+  .fly-link:hover, .drop-link:hover { background: var(--raise); color: #fff; }
+  .fly-link small, .drop-link small { display: block; font-weight: 400;
+    font-size: 12px; color: var(--muted); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 7px; }
+  .dot.c { background: var(--cyan); box-shadow: 0 0 9px var(--cyan); }
+  .dot.a { background: var(--amber); box-shadow: 0 0 9px var(--amber); }
+  .dot.m { background: var(--magenta); box-shadow: 0 0 9px var(--magenta); }
+
+  .flyout {
+    position: absolute; left: calc(100% + 6px); top: -7px; min-width: 224px;
+    background: var(--raise); border: 1px solid var(--line); border-radius: 13px;
+    padding: 6px; box-shadow: 0 24px 54px rgba(0,0,0,.62);
+    visibility: hidden; opacity: 0; transform: translateX(-7px); pointer-events: none;
+    transition: transform .15s ease;
+    z-index: 62;
+  }
+  .fly-item:hover > .flyout,
+  .fly-item:focus-within > .flyout {
+    visibility: visible; opacity: 1; transform: none; pointer-events: auto;
+  }
+  .leaf {
+    display: block; width: 100%; text-align: left; padding: 9px 11px;
+    border-radius: 9px; border: 0; background: none; color: #dbe6fb;
+    font-family: inherit; font-size: 14px; font-weight: 500; line-height: 1.4;
+    cursor: pointer;
+  }
+  .leaf:hover { background: #1d2d4d; color: #fff; }
+  .leaf b { color: var(--cyan); font-weight: 650; }
+
+  .nav-spacer { flex: 1; }
+  .search { display: flex; align-items: center; gap: 8px; background: #0d1729;
+    border: 1px solid var(--line); border-radius: 10px; padding: 6px 11px; }
+  .search input { background: none; border: 0; outline: none; color: var(--ink);
+    font-family: inherit; font-size: 14px; width: 148px; }
+  .search input::placeholder { color: #6d80a3; }
+  .search span { color: var(--muted); font-size: 13px; }
+  #workspace { width: 34px; height: 34px; margin-left: 12px; border-radius: 11px;
+    border: 1px solid #2c4370; cursor: pointer; color: #04121a; font-weight: 800;
+    font-size: 13px; background: linear-gradient(140deg, var(--cyan), var(--blue)); }
+  .wsmenu { position: fixed; top: 52px; right: 16px; min-width: 232px; z-index: 70;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 13px;
+    padding: 6px; box-shadow: 0 24px 54px rgba(0,0,0,.6); }
+  .wsmenu[hidden] { display: none; }
+  .wsmenu .drop-link { font-size: 14px; }
+
+  /* ---- the page under the bar --------------------------------------------- */
+  .wrap { padding: calc(var(--nav) + 26px) 26px 90px; max-width: 1080px; margin: 0 auto; }
+  h1 { font-size: 25px; margin: 0 0 6px; letter-spacing: -.2px; }
+  .lede { color: var(--muted); margin: 0 0 22px; max-width: 68ch; }
+  .try { border: 1px solid #2b4a6e; border-radius: 16px; padding: 18px 20px;
+    background: linear-gradient(135deg, rgba(53,224,208,.10), rgba(76,141,255,.07) 55%, rgba(255,77,157,.08));
+    margin-bottom: 24px; }
+  .try strong { display: block; font-size: 13px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--cyan); margin-bottom: 8px; }
+  .try p { margin: 0 0 12px; color: #cfdcf5; }
+  .runs { display: flex; flex-wrap: wrap; gap: 9px; }
+  .run { border: 1px solid #33507f; background: #132340; color: #e6eefc;
+    padding: 8px 13px; border-radius: 10px; cursor: pointer;
+    font-family: inherit; font-size: 13px; font-weight: 550; }
+  .run:hover { border-color: var(--cyan); color: #fff; background: #17304f; }
+  code { background: #0c1730; border: 1px solid var(--line); padding: 1px 6px;
+    border-radius: 6px; font-size: 13px; color: #b9e9ff; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 14px; margin-bottom: 24px; }
+  .stat { border: 1px solid var(--line); border-radius: 14px; background: var(--surface);
+    padding: 15px 16px; }
+  .stat span { display: block; font-size: 12px; color: var(--muted);
+    letter-spacing: .06em; text-transform: uppercase; }
+  .stat b { display: block; font-size: 26px; margin-top: 5px; letter-spacing: -.5px; }
+  .stat i { font-style: normal; font-size: 12px; font-weight: 600; }
+  .up { color: var(--ok); } .down { color: var(--danger); } .flat { color: var(--warn); }
+  .panel { border: 1px solid var(--line); border-radius: 16px; background: var(--surface);
+    padding: 18px 20px; }
+  .panel h2 { font-size: 17px; margin: 0 0 4px; }
+  .panel p.sub { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; align-items: center; gap: 12px; padding: 11px 0;
+    border-top: 1px solid #1b2942; }
+  .row:first-of-type { border-top: 0; }
+  .row .name { flex: 1; font-weight: 550; }
+  .row .name small { display: block; font-weight: 400; color: var(--muted); font-size: 12px; }
+  .pill { font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+    padding: 3px 8px; border-radius: 999px; }
+  .pill.live { color: #062; background: var(--ok); }
+  .pill.paused { color: #3a2600; background: var(--warn); }
+  .pill.error { color: #fff; background: var(--danger); }
+  .sw { width: 42px; height: 23px; border-radius: 999px; border: 1px solid #2d4470;
+    background: #16233d; cursor: pointer; position: relative; flex: 0 0 42px; }
+  .sw::after { content: ''; position: absolute; top: 2px; left: 2px; width: 17px; height: 17px;
+    border-radius: 50%; background: #6f86b0; transition: transform .16s ease, background .16s; }
+  .sw[aria-checked="true"] { background: rgba(53,224,208,.22); border-color: var(--cyan); }
+  .sw[aria-checked="true"]::after { transform: translateX(19px); background: var(--cyan); }
+  .foot { color: #6d80a3; font-size: 12px; margin-top: 18px; }
+  @media (max-width: 720px) {
+    .search { display: none; }
+    .flyout { left: 12px; top: calc(100% + 4px); }
+    .wrap { padding-left: 16px; padding-right: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="topnav" aria-label="Main">
+  <div class="brand"><i></i>Lumen</div>
+
+  <div class="nav-item has-children">
+    <a class="nav-link" href="#platform" data-testid="nav-platform">Platform<span class="caret">&#9662;</span></a>
+    <div class="dropdown" role="menu" aria-label="Platform">
+      <div class="drop-head">Build</div>
+      <div class="fly-item has-children">
+        <button class="fly-link" role="menuitem" data-testid="nav-data-sources">
+          <span class="dot c"></span>
+          <span>Data sources<small>Where the numbers come from</small></span>
+          <span class="caret">&#9656;</span>
+        </button>
+        <div class="flyout" role="menu" aria-label="Data sources">
+          <button class="leaf" role="menuitem" data-testid="leaf-connectors"><b>Connectors</b></button>
+          <button class="leaf" role="menuitem" data-testid="leaf-warehouses">Warehouses</button>
+          <button class="leaf" role="menuitem" data-testid="leaf-uploads">CSV uploads</button>
+          <button class="leaf" role="menuitem" data-testid="leaf-streams">Event streams</button>
+        </div>
+      </div>
+      <div class="fly-item has-children">
+        <button class="fly-link" role="menuitem" data-testid="nav-pipelines">
+          <span class="dot a"></span>
+          <span>Pipelines<small>Schedules and transforms</small></span>
+          <span class="caret">&#9656;</span>
+        </button>
+        <div class="flyout" role="menu" aria-label="Pipelines">
+          <button class="leaf" role="menuitem">Runs</button>
+          <button class="leaf" role="menuitem">Transforms</button>
+          <button class="leaf" role="menuitem">Alerts</button>
+        </div>
+      </div>
+      <a class="drop-link" role="menuitem" href="#models"><span class="dot m"></span>
+        <span>Models<small>Metrics everyone agrees on</small></span></a>
+    </div>
+  </div>
+
+  <!-- This one is mounted by a handler, not by a stylesheet: the nodes do not
+       exist until the pointer arrives, and are gone when it leaves. -->
+  <div class="nav-item" id="reports-item">
+    <a class="nav-link" href="#reports" data-testid="nav-reports">Reports<span class="caret">&#9662;</span></a>
+  </div>
+
+  <div class="nav-item"><a class="nav-link" href="#docs">Docs</a></div>
+  <div class="nav-spacer"></div>
+
+  <label class="search">
+    <span>&#8981;</span>
+    <input id="q" type="search" placeholder="Search metrics" aria-label="Search metrics">
+  </label>
+  <button id="workspace" data-testid="workspace-button" aria-haspopup="menu"
+          aria-expanded="false" title="Workspace">L</button>
+</nav>
+
+<div class="wsmenu" id="wsmenu" role="menu" aria-label="Workspace" hidden>
+  <button class="drop-link" role="menuitem">Workspace settings</button>
+  <button class="drop-link" role="menuitem">Members</button>
+  <button class="drop-link" role="menuitem">Billing</button>
+</div>
+
+<main class="wrap" id="view">
+  <h1>Good evening, skieriya.</h1>
+  <p class="lede">Every number below is seeded. The bar above is the fixture: two of
+    its levels open only under the pointer, one is mounted by a handler, and the
+    avatar is an ordinary click menu.</p>
+
+  <div class="try" data-guide-exclude>
+    <strong>Try it</strong>
+    <p>Open her ask bar and type <code>platform → data sources → connectors</code>.
+      She has to say <em>hover over</em>, wait for your pointer, and walk down two
+      flyouts to a leaf that really is a click. Nothing here mounts on hover, so
+      watching the DOM alone would tell her nothing.</p>
+    <div class="runs">
+      <button class="run" data-run="platform → data sources → connectors">Walk the hover route</button>
+      <button class="run" data-run="reports → scheduled">Walk the mounted menu</button>
+      <button class="run" data-run="connectors">Just point at connectors</button>
+      <button class="run" data-run="teach">Teach her a route</button>
+      <button class="run" data-run="stop">Stop</button>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="stat"><span>Events today</span><b>1,284,902</b><i class="up">&#9650; 12.4%</i></div>
+    <div class="stat"><span>Active connectors</span><b id="stat-connectors">6</b><i class="flat">2 need attention</i></div>
+    <div class="stat"><span>Pipeline failures</span><b>3</b><i class="down">&#9660; 41%</i></div>
+    <div class="stat"><span>Query spend</span><b>$412.08</b><i class="up">&#9650; 4.1%</i></div>
+  </div>
+
+  <div class="panel" id="panel">
+    <h2 id="panel-title">Overview</h2>
+    <p class="sub" id="panel-sub">Pick a leaf in the Platform flyout to load its panel.</p>
+    <div id="panel-body"></div>
+  </div>
+
+  <p class="foot">Nothing here is a real product. It is a fixture for a guide.</p>
+</main>
+
+<script>
+  (function () {
+    const panelTitle = document.getElementById('panel-title');
+    const panelSub = document.getElementById('panel-sub');
+    const panelBody = document.getElementById('panel-body');
+
+    const CONNECTORS = [
+      { name: 'Postgres — production', sub: 'db.lumen.internal · 42 tables', state: 'live', on: true },
+      { name: 'Stripe', sub: 'Charges, invoices, subscriptions', state: 'live', on: true },
+      { name: 'Segment', sub: 'Web and mobile events', state: 'live', on: true },
+      { name: 'Google Ads', sub: 'Campaign performance', state: 'paused', on: false },
+      { name: 'Snowflake', sub: 'ANALYTICS.PUBLIC · 118 tables', state: 'live', on: true },
+      { name: 'S3 export bucket', sub: 'Nightly CSV, eu-west-1', state: 'error', on: false },
+    ];
+
+    function show(title, sub, rows) {
+      panelTitle.textContent = title;
+      panelSub.textContent = sub;
+      panelBody.textContent = '';
+      rows.forEach((r) => {
+        const row = document.createElement('div');
+        row.className = 'row';
+        const name = document.createElement('div');
+        name.className = 'name';
+        name.textContent = r.name;
+        const small = document.createElement('small');
+        small.textContent = r.sub;
+        name.appendChild(small);
+        const pill = document.createElement('span');
+        pill.className = 'pill ' + r.state;
+        pill.textContent = r.state;
+        const sw = document.createElement('button');
+        sw.className = 'sw';
+        sw.setAttribute('role', 'switch');
+        sw.setAttribute('aria-checked', String(r.on));
+        sw.setAttribute('aria-label', r.name);
+        sw.addEventListener('click', () => {
+          r.on = !r.on;
+          r.state = r.on ? 'live' : 'paused';
+          sw.setAttribute('aria-checked', String(r.on));
+          pill.className = 'pill ' + r.state;
+          pill.textContent = r.state;
+        });
+        row.appendChild(name); row.appendChild(pill); row.appendChild(sw);
+        panelBody.appendChild(row);
+      });
+    }
+
+    function connectors() {
+      show('Connectors', 'Six sources feeding this workspace. Flip one to pause it.', CONNECTORS);
+    }
+    function warehouses() {
+      show('Warehouses', 'Where models are materialised.', [
+        { name: 'Snowflake', sub: 'ANALYTICS · us-east-1', state: 'live', on: true },
+        { name: 'BigQuery', sub: 'lumen-prod · EU', state: 'paused', on: false },
+      ]);
+    }
+    function scheduled() {
+      show('Scheduled reports', 'Sent by email, owned by this workspace.', [
+        { name: 'Monday growth digest', sub: 'Mon 08:00 · 14 recipients', state: 'live', on: true },
+        { name: 'Spend anomaly alert', sub: 'Hourly · 3 recipients', state: 'live', on: true },
+        { name: 'Board pack', sub: 'Monthly · 5 recipients', state: 'paused', on: false },
+      ]);
+    }
+
+    const LEAVES = {
+      'leaf-connectors': connectors,
+      'leaf-warehouses': warehouses,
+      'leaf-uploads': () => show('CSV uploads', 'Drag a file in, or pick one of these.', [
+        { name: 'q3-cohorts.csv', sub: '2.4 MB · uploaded 3 days ago', state: 'live', on: true },
+      ]),
+      'leaf-streams': () => show('Event streams', 'Live tails, sampled at 1%.', [
+        { name: 'web.click', sub: '18,204 events/min', state: 'live', on: true },
+        { name: 'api.error', sub: '42 events/min', state: 'error', on: false },
+      ]),
+    };
+    document.querySelectorAll('.leaf[data-testid]').forEach((b) => {
+      b.addEventListener('click', () => { const fn = LEAVES[b.dataset.testid]; if (fn) fn(); });
+    });
+    document.querySelectorAll('.flyout .leaf:not([data-testid])').forEach((b) => {
+      b.addEventListener('click', () => show(b.textContent, 'Pipeline detail.', [
+        { name: 'Nightly rollup', sub: '02:00 UTC · 14 transforms', state: 'live', on: true },
+      ]));
+    });
+
+    // ---- Reports: a menu that is MOUNTED on hover ----------------------------
+    const reportsItem = document.getElementById('reports-item');
+    let reportsMenu = null, reportsTimer = null;
+    function mountReports() {
+      if (reportsMenu) return;
+      reportsMenu = document.createElement('div');
+      reportsMenu.className = 'dropdown';
+      reportsMenu.setAttribute('role', 'menu');
+      reportsMenu.setAttribute('aria-label', 'Reports');
+      // Mounted menus carry no :hover rule of their own, so the visibility is
+      // set here rather than by the stylesheet.
+      reportsMenu.style.visibility = 'visible';
+      reportsMenu.style.opacity = '1';
+      reportsMenu.style.transform = 'none';
+      reportsMenu.style.pointerEvents = 'auto';
+      const head = document.createElement('div');
+      head.className = 'drop-head';
+      head.textContent = 'Deliver';
+      reportsMenu.appendChild(head);
+      [['Scheduled', 'Email digests and alerts', scheduled],
+       ['Shared with me', 'From your team', null],
+       ['Drafts', 'Three unfinished', null]].forEach(([label, sub, fn]) => {
+        const b = document.createElement('button');
+        b.className = 'drop-link';
+        b.setAttribute('role', 'menuitem');
+        b.dataset.testid = 'reports-' + label.toLowerCase().replace(/\s+/g, '-');
+        const s = document.createElement('span');
+        s.textContent = label;
+        const sm = document.createElement('small');
+        sm.textContent = sub;
+        s.appendChild(sm);
+        b.appendChild(s);
+        b.addEventListener('click', () => { if (fn) fn(); unmountReports(); });
+        reportsMenu.appendChild(b);
+      });
+      reportsItem.appendChild(reportsMenu);
+    }
+    function unmountReports() {
+      if (reportsMenu) { reportsMenu.remove(); reportsMenu = null; }
+    }
+    reportsItem.addEventListener('mouseenter', () => { clearTimeout(reportsTimer); mountReports(); });
+    reportsItem.addEventListener('mouseleave', () => {
+      clearTimeout(reportsTimer);
+      reportsTimer = setTimeout(unmountReports, 220);
+    });
+
+    // ---- the avatar: an ordinary click menu ---------------------------------
+    const ws = document.getElementById('workspace');
+    const wsmenu = document.getElementById('wsmenu');
+    ws.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const open = wsmenu.hidden;
+      wsmenu.hidden = !open;
+      ws.setAttribute('aria-expanded', String(open));
+    });
+    document.addEventListener('click', (e) => {
+      if (!wsmenu.hidden && !wsmenu.contains(e.target) && e.target !== ws) {
+        wsmenu.hidden = true;
+        ws.setAttribute('aria-expanded', 'false');
+      }
+    });
+    wsmenu.querySelectorAll('.drop-link').forEach((b) => {
+      b.addEventListener('click', () => {
+        show(b.textContent, 'Workspace level — reached by clicking the avatar.', [
+          { name: 'skieriya', sub: 'Owner · this workspace', state: 'live', on: true },
+        ]);
+        wsmenu.hidden = true;
+        ws.setAttribute('aria-expanded', 'false');
+      });
+    });
+
+    // ---- what the harness can ask about ------------------------------------
+    const visible = (el) => {
+      if (!el) return false;
+      const s = getComputedStyle(el);
+      if (s.visibility === 'hidden' || s.display === 'none' || s.opacity === '0') return false;
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0;
+    };
+    window.__hover = {
+      connectors, warehouses, scheduled,
+      mountReports, unmountReports,
+      // A browser that never paints leaves every CSS transition sitting at time
+      // zero, so a flyout that matches :hover is still visibility:hidden. This is
+      // what one frame would have done, and all it does is advance the page's own
+      // animations — it never opens a menu the pointer did not open.
+      settle() {
+        const list = document.getAnimations ? document.getAnimations() : [];
+        list.forEach((a) => { try { a.finish(); } catch (_) {} });
+        return list.length;
+      },
+      // What is actually on screen, versus what a document search returns.
+      state() {
+        return {
+          dropdowns: Array.from(document.querySelectorAll('.dropdown')).filter(visible)
+            .map((d) => d.getAttribute('aria-label')),
+          flyouts: Array.from(document.querySelectorAll('.flyout')).filter(visible)
+            .map((d) => d.getAttribute('aria-label')),
+          leaves: Array.from(document.querySelectorAll('.leaf')).filter(visible).map((b) => b.textContent.trim()),
+          reportsMounted: !!reportsMenu,
+          workspaceOpen: !wsmenu.hidden,
+          panel: panelTitle.textContent,
+          rows: Array.from(panelBody.querySelectorAll('.row .name')).map((n) => n.firstChild.textContent),
+        };
+      },
+      // The real thing the guide has to notice: resting the pointer on a level.
+      rest(testid) {
+        const el = document.querySelector('[data-testid="' + testid + '"]');
+        if (!el) return false;
+        const r = el.getBoundingClientRect();
+        const init = { bubbles: true, cancelable: true, clientX: r.left + r.width / 2,
+          clientY: r.top + r.height / 2, pointerId: 1, pointerType: 'mouse' };
+        el.dispatchEvent(new PointerEvent('pointerover', init));
+        el.dispatchEvent(new MouseEvent('mouseover', init));
+        // A CSS-only flyout does not open for a synthetic event, so the harness
+        // opens it the way the pointer would: by forcing the state the stylesheet
+        // is waiting for. Real verification uses a real mouse move.
+        const item = el.closest('.nav-item, .fly-item');
+        if (item) item.classList.add('is-rested');
+        return true;
+      },
+      lift() {
+        document.querySelectorAll('.is-rested').forEach((e) => e.classList.remove('is-rested'));
+      },
+    };
+
+    document.querySelectorAll('.run').forEach((b) => {
+      b.addEventListener('click', () => {
+        const g = window.UIGuide;
+        if (g) g.say(b.dataset.run, { instant: true });
+      });
+    });
+  })();
+</script>
+<style>
+  /* The harness-only rest state, mirroring what :hover does. A real pointer uses
+     the rules above; these exist so a synthetic pointerover can be tested too. */
+  .nav-item.is-rested > .dropdown { visibility: visible; opacity: 1; transform: none; pointer-events: auto; }
+  .fly-item.is-rested > .flyout { visibility: visible; opacity: 1; transform: none; pointer-events: auto; }
+</style>
+<script>
+  window.__hutaoRaf = 'manual';
+</script>
+<script>
+  // The add-on's background page, stood in over http so learned routes survive a
+  // reload here exactly as they do in the browser.
+  (function () {
+    const KEY = 'paths.v1';
+    const saved = localStorage.getItem('fx.' + KEY);
+    const store = saved ? { [KEY]: JSON.parse(saved) } : {};
+    const listeners = [];
+    const storageListeners = [];
+    const stub = {
+      runtime: {
+        getURL(name) { return new URL('../' + name, document.baseURI).href; },
+        onMessage: { addListener(fn) { listeners.push(fn); } },
+        sendMessage(msg) {
+          const out = listeners.map((fn) => fn(msg)).filter((r) => r !== undefined);
+          return Promise.resolve(out.length ? out[0] : undefined);
+        },
+      },
+      storage: { local: {
+        get(key) { return Promise.resolve({ [key]: store[key] }); },
+        set(obj) {
+          const changes = {};
+          for (const k in obj) changes[k] = { oldValue: store[k], newValue: obj[k] };
+          Object.assign(store, obj);
+          localStorage.setItem('fx.' + KEY, JSON.stringify(store[KEY] || []));
+          storageListeners.forEach((fn) => fn(changes, 'local'));
+          return Promise.resolve();
+        },
+      } },
+    };
+    stub.storage.onChanged = { addListener(fn) { storageListeners.push(fn); } };
+    window.browser = stub;
+    const req = new XMLHttpRequest();
+    req.open('GET', '../background.js', false);
+    req.send(null);
+    if (req.status === 200) new Function('browser', req.responseText)(stub);
+  })();
+</script>
+<script src="../content.js"></script>
+<script>
+  window.__hoverGuide = {
+    status() {
+      const g = window.UIGuide;
+      const f = document.querySelector('iframe[src*="hutao.html"]');
+      return {
+        path: g ? g.pathStatus() : null,
+        caption: f && f.contentWindow ? f.contentWindow.document.getElementById('caption').textContent : null,
+        count: g ? g.status().count : 0,
+        known: g ? g.knownPaths.length : 0,
+      };
+    },
+    target() {
+      const g = window.UIGuide;
+      const n = g && g.queue ? g.queue.current : null;
+      if (!n) return null;
+      return { label: n.label, testid: n.el && n.el.getAttribute('data-testid'),
+        connected: !!(n.el && n.el.isConnected), tag: n.el && n.el.tagName };
+    },
+    say(text) { return window.UIGuide.say(text, { instant: true }); },
+  };
+</script>
+</body>
+</html>

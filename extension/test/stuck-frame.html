@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Settings</title>
+<!-- The second level of stuck.html: a whole document inside a same-origin frame.
+     The rows are plain divs with a pointer cursor, the nav is rebuilt from scratch
+     on every navigation (so the element a guide was holding is gone), and the
+     memory toggle only listens for pointerdown — it never emits a click. -->
+<style>
+  :root { --bg: #17171d; --line: #2a2a35; --ink: #ececf2; --muted: #9a9ab0; --accent: #7c5cff; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.6 system-ui, "Segoe UI", Roboto, sans-serif; }
+  .wrap { display: flex; gap: 22px; padding: 18px; height: 100vh; }
+  nav { width: 196px; flex: 0 0 196px; border-right: 1px solid var(--line);
+    padding-right: 16px; display: flex; flex-direction: column; gap: 2px; }
+  nav .row { padding: 8px 10px; border-radius: 8px; cursor: pointer; color: #cfcfe0; }
+  nav .row:hover { background: #22222c; }
+  nav .row.on { background: #2b2545; color: #fff; }
+  .body { flex: 1; min-width: 0; }
+  h2 { font-size: 17px; margin: 0 0 4px; }
+  p.sub { color: var(--muted); margin: 0 0 16px; font-size: 13px; }
+  .mem { display: flex; justify-content: space-between; align-items: center;
+    gap: 16px; padding: 13px 0; border-bottom: 1px solid var(--line); max-width: 520px; }
+  .mem b { font-weight: 550; display: block; }
+  .mem small { color: var(--muted); font-size: 12.5px; }
+  /* A switch that is not a button and has no role: only the cursor says press me,
+     and only pointerdown does anything. */
+  .sw { width: 42px; height: 23px; border-radius: 12px; background: #3a3a4e;
+    cursor: pointer; position: relative; flex: 0 0 42px; transition: background .16s; }
+  .sw::after { content: ''; position: absolute; top: 3px; left: 3px; width: 17px; height: 17px;
+    border-radius: 50%; background: #cfcfe0; transition: transform .16s; }
+  .sw.on { background: var(--accent); }
+  .sw.on::after { transform: translateX(19px); background: #fff; }
+  ::-webkit-scrollbar { width: 9px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: #33334a; border-radius: 6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav id="nav"></nav>
+  <div class="body" id="body"></div>
+</div>
+<script>
+  (function () {
+    const nav = document.getElementById('nav');
+    const body = document.getElementById('body');
+    let current = 'General';
+    let memory = true;
+    let renders = 0;
+
+    const TABS = ['General', 'Personalization', 'Data controls', 'Account'];
+
+    // Every navigation throws the whole nav away and builds it again. The words
+    // and the geometry are identical; the elements are not. A guide that remembers
+    // an element instead of a control loses the click here.
+    function renderNav() {
+      renders++;
+      nav.textContent = '';
+      for (const t of TABS) {
+        const d = document.createElement('div');
+        d.className = 'row' + (t === current ? ' on' : '');
+        d.textContent = t;
+        d.addEventListener('click', () => { current = t; renderNav(); renderBody(); });
+        nav.appendChild(d);
+      }
+    }
+
+    function renderBody() {
+      body.textContent = '';
+      const h = document.createElement('h2');
+      h.textContent = current;
+      const p = document.createElement('p');
+      p.className = 'sub';
+      body.appendChild(h);
+      body.appendChild(p);
+
+      if (current === 'Personalization') {
+        p.textContent = 'How Northbeam adapts to you over time.';
+        body.appendChild(row('Memory', 'Let Northbeam remember details between chats', 'memory', memory, () => {
+          memory = !memory;
+          renderBody();
+        }));
+        body.appendChild(row('Chat history', 'Keep a record of what you have asked', 'history', true, () => {}));
+      } else if (current === 'General') {
+        p.textContent = 'Theme, language and the shape of the app.';
+        body.appendChild(row('Dark mode', 'Already on, and staying on', 'dark', true, () => {}));
+      } else if (current === 'Data controls') {
+        p.textContent = 'What is stored, and for how long.';
+        body.appendChild(row('Upload chats and files', 'Used to improve the models', 'upload', false, () => {}));
+      } else {
+        p.textContent = 'Plan, billing and the address you signed up with.';
+        body.appendChild(row('Export data', 'A copy of everything, in a zip', 'export', null, () => {}));
+      }
+    }
+
+    // The toggle handles pointerdown only. No click listener, no role, no button:
+    // a guide waiting for a `click` event waits forever on this row.
+    function row(title, sub, key, on, toggle) {
+      const r = document.createElement('div');
+      r.className = 'mem';
+      const left = document.createElement('div');
+      const b = document.createElement('b');
+      b.textContent = title;
+      const s = document.createElement('small');
+      s.textContent = sub;
+      left.appendChild(b);
+      left.appendChild(s);
+      r.appendChild(left);
+      if (on !== null) {
+        const sw = document.createElement('div');
+        sw.className = 'sw' + (on ? ' on' : '');
+        sw.setAttribute('data-testid', key + '-toggle');
+        sw.setAttribute('aria-label', title);
+        sw.addEventListener('pointerdown', (e) => { e.preventDefault(); toggle(); });
+        r.appendChild(sw);
+      }
+      return r;
+    }
+
+    renderNav();
+    renderBody();
+
+    window.__frame = {
+      rerender: renderNav,
+      go(t) { current = t; renderNav(); renderBody(); },
+      state: () => ({
+        current, memory, renders,
+        tabs: Array.from(nav.querySelectorAll('.row')).map((e) => e.textContent),
+        rows: Array.from(body.querySelectorAll('.mem b')).map((e) => e.textContent),
+        toggles: Array.from(body.querySelectorAll('.sw')).map((e) => ({
+          id: e.getAttribute('data-testid'), on: e.classList.contains('on'),
+        })),
+      }),
+    };
+  })();
+</script>
+</body>
+</html>

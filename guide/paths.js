@@ -1,5 +1,6 @@
 // Multi-level guidance. A path is an ordered handful of places she has to show
-// you, one at a time: she points at the first, waits until you actually click it,
+// you, one at a time: she points at the first, waits until you actually work it —
+// a click, a key, or just resting the pointer on a level that opens on hover —
 // lets the page settle, then resolves the next step against whatever the page has
 // become. That ordering is the whole point — the control you are looking for
 // usually does not exist in the DOM until you open the panel holding it, so a
@@ -33,9 +34,10 @@ export function parseChain(text) {
 }
 
 // A step is text plus an optional last-resort selector she recorded while learning
-// the path. Accept bare strings so the bundled table stays readable.
+// the path, and how it is worked: most controls are pressed, but a level that
+// opens under the pointer is hovered and never clicked at all.
 export function normalizeSteps(list) {
-  return (list || []).map((s) => (typeof s === 'string' ? { find: s } : { find: String(s.find || s.label || ''), sel: s.sel || null, wait: s.wait || null }));
+  return (list || []).map((s) => (typeof s === 'string' ? { find: s } : { find: String(s.find || s.label || ''), sel: s.sel || null, wait: s.wait || null, via: s.via === 'hover' ? 'hover' : null }));
 }
 
 // Goals are kept as plain tokens so a plan can be matched by words no matter
@@ -96,8 +98,8 @@ export function planFor(query, { recipes = [], learned = [], host = '' } = {}) {
 
 // The state machine. It knows nothing about the DOM: the host resolves each step,
 // moves her gaze, and tells her when a click has landed.
-export function createPathRunner({ resolve, goTo, onStep, onMiss, onDone, onEvent } = {}) {
-  const st = { plan: null, i: -1, node: null, awaiting: null };
+export function createPathRunner({ resolve, goTo, onStep, onMiss, onDone, onEvent, findReveal } = {}) {
+  const st = { plan: null, i: -1, node: null, awaiting: null, reveal: null, advanced: false, reveals: 0 };
 
   function status() {
     if (!st.plan) return null;
@@ -110,18 +112,41 @@ export function createPathRunner({ resolve, goTo, onStep, onMiss, onDone, onEven
       find: step ? step.find : null,
       label: st.node ? st.node.label : step ? step.find : null,
       awaiting: st.awaiting,
+      reveal: st.reveal ? st.reveal.label : null,
+      reveals: st.reveals,
+      via: st.awaiting === 'reveal'
+        ? (st.reveal && st.reveal.via) || 'click'
+        : (step && step.via) || (st.node && st.node.via) || 'click',
     };
   }
 
   function show(i) {
     const step = st.plan.steps[i];
     if (!step) return Promise.resolve({ ok: false, reason: 'past-the-end' });
+    if (i !== st.i) st.reveals = 0;          // a new step gets its own tries
     st.i = i;
+    st.node = null;
+    st.reveal = null;
     const node = resolve(step, i);
     if (!node) {
-      st.node = null;
+      // The control you are after is probably inside something that is not open
+      // yet. Rather than shrug, look for the thing that opens it and point at
+      // that: the route can start from a menu that has not been opened. Twice is
+      // enough — a third try is a loop, not guidance.
+      const reveal = st.reveals < 2 && findReveal ? findReveal(step, i, st.plan, st.reveals) : null;
+      if (reveal) {
+        st.reveals++;
+        st.reveal = reveal;
+        st.awaiting = 'reveal';
+        // She looks at the thing that opens it, so it is clear what to press.
+        if (goTo) {
+          try { Promise.resolve(goTo(reveal)).then(() => {}, () => {}); } catch (_) {}
+        }
+        if (onMiss) onMiss(step, i, st.plan, { reveal });
+        return Promise.resolve({ ok: false, reason: 'step-not-found', reveal });
+      }
       st.awaiting = 'missing';
-      if (onMiss) onMiss(step, i, st.plan);
+      if (onMiss) onMiss(step, i, st.plan, { reveal: null });
       return Promise.resolve({ ok: false, reason: 'step-not-found' });
     }
     st.node = node;
@@ -137,10 +162,28 @@ export function createPathRunner({ resolve, goTo, onStep, onMiss, onDone, onEven
     return Promise.resolve({ ok: true, node });
   }
 
+  // The route moves on to the next step, or ends.
+  async function advance() {
+    if (!st.plan) return null;
+    if (st.i + 1 >= st.plan.steps.length) {
+      const done = st.plan;
+      st.plan = null; st.i = -1; st.node = null; st.awaiting = null; st.reveal = null; st.reveals = 0;
+      if (onDone) onDone(done);
+      return { done: true };
+    }
+    return show(st.i + 1);
+  }
+
+  async function back() {
+    if (!st.plan || st.i <= 0) return null;
+    return show(st.i - 1);
+  }
+
   return {
     get active() { return !!st.plan; },
     get awaiting() { return st.awaiting; },
     get node() { return st.node; },
+    get held() { return st.awaiting === 'reveal' ? (st.reveal && st.reveal.el) : (st.node && st.node.el); },
     get plan() { return st.plan; },
     status,
 
@@ -149,49 +192,112 @@ export function createPathRunner({ resolve, goTo, onStep, onMiss, onDone, onEven
       st.plan = plan;
       st.i = -1;
       st.node = null;
+      st.reveal = null;
+      st.advanced = false;
+      st.reveals = 0;
       if (onEvent) onEvent('start', status());
       return show(0);
     },
 
-    async advance() {
-      if (!st.plan) return null;
-      if (st.i + 1 >= st.plan.steps.length) {
-        const done = st.plan;
-        st.plan = null; st.i = -1; st.node = null; st.awaiting = null;
-        if (onDone) onDone(done);
-        return { done: true };
-      }
-      return show(st.i + 1);
+    advance,
+    back,
+
+    // The page re-rendered the control she was holding: same step, same words,
+    // new element. Pointing at the old one is pointing at nothing, and a click on
+    // the new one would never match it.
+    retarget(node) {
+      if (!st.plan || !node || !node.el) return false;
+      if (st.awaiting !== 'click' && st.awaiting !== 'reveal') return false;
+      st.node = node;
+      st.reveal = null;
+      st.awaiting = 'click';
+      return true;
     },
 
-    async back() {
-      if (!st.plan || st.i <= 0) return null;
-      return show(st.i - 1);
-    },
-
-    // The page changed underneath a step she could not find: try it again.
+    // The page changed underneath a step she could not find: try it again. A
+    // reveal is deliberately not retried here — it is an instruction waiting for
+    // you, and re-running it would spend its tries before you ever clicked.
     async retry() {
       if (!st.plan || st.awaiting !== 'missing') return null;
       return show(st.i);
     },
 
+    // The click landed and the page has settled. If it was the step itself, the
+    // route moves on; if it was the thing that opens the step, the same step is
+    // looked for again in the page that just opened.
+    async settled() {
+      if (!st.plan) return null;
+      if (st.advanced) return advance();
+      return show(st.i);
+    },
+
     stop() {
       const plan = st.plan;
-      st.plan = null; st.i = -1; st.node = null; st.awaiting = null;
+      st.plan = null; st.i = -1; st.node = null; st.awaiting = null; st.reveal = null; st.reveals = 0;
       if (plan && onEvent) onEvent('stop', { name: plan.name });
       return plan;
     },
 
-    // Did this click complete the step she is holding?
-    clicked(el) {
-      if (!st.plan || st.awaiting !== 'click' || !st.node || !st.node.el) return false;
-      const target = st.node.el;
-      if (!(target === el || target.contains(el) || el.contains(target))) return false;
+    // The host has established that the press just made was on this step's
+    // control, even though the page rebuilt the element between the press and
+    // the answer — a menu that unmounts its own item takes the click event with
+    // it, and there is nothing left to test containment against.
+    pressed() {
+      if (!st.plan || st.awaiting !== 'click') return false;
       st.awaiting = 'settle';
+      st.advanced = true;
+      if (onEvent) onEvent('clicked', status());
+      return true;
+    },
+
+    // Is this event path on the thing she is holding — the step, or the opener
+    // standing in for it? The same containment test a click uses, so a hover
+    // inside a shadow root or a frame is not lost at the boundary.
+    holds(el, composed) {
+      if (!st.plan) return false;
+      const target = st.awaiting === 'reveal' ? (st.reveal && st.reveal.el) : (st.node && st.node.el);
+      return hits(target, el, composed);
+    },
+
+    // A level that opens on hover: no click ever lands, so the page arriving
+    // under the pointer is the only evidence there is. The step is then looked
+    // for again in whatever opened, exactly as a pressed opener would.
+    opened() {
+      if (!st.plan || st.awaiting !== 'reveal') return false;
+      st.awaiting = 'settle';
+      st.advanced = false;
+      if (onEvent) onEvent('revealed', status());
+      return true;
+    },
+
+    // Did this click complete the step she is holding, or open the thing that
+    // holds it? `composed` is the event's composedPath: the only test that still
+    // works when the press happened inside a shadow root, where contains() stops
+    // at the boundary and e.target is retargeted to the host.
+    clicked(el, composed) {
+      if (!st.plan) return false;
+      if (st.awaiting === 'reveal' && st.reveal && st.reveal.el) {
+        if (!hits(st.reveal.el, el, composed)) return false;
+        st.awaiting = 'settle';
+        st.advanced = false;
+        if (onEvent) onEvent('revealed', status());
+        return true;
+      }
+      if (st.awaiting !== 'click' || !st.node || !st.node.el) return false;
+      if (!hits(st.node.el, el, composed)) return false;
+      st.awaiting = 'settle';
+      st.advanced = true;
       if (onEvent) onEvent('clicked', status());
       return true;
     },
   };
+}
+
+function hits(target, el, composed) {
+  if (!target || !el) return false;
+  if (target === el) return true;
+  try { if (target.contains(el) || el.contains(target)) return true; } catch (_) { /* across documents */ }
+  return !!(composed && composed.indexOf(target) >= 0);
 }
 
 // Things worth knowing without being taught. Deliberately worded the way a person

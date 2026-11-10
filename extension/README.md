@@ -73,6 +73,33 @@ places she has to show you:
    whenever the page changes, because opening the panel that hides it is what
    triggers that.
 
+And when the step is not merely late but **not mounted yet** — the row you want is
+inside a menu that only exists after a click — she does not sit there waiting. She
+looks for the control that *opens* it (an avatar, a kebab menu, a "more" button),
+points at that instead, and says *"“settings” is not out yet — click “profile” to
+open it, and I will take you from there."* You click it, she picks the route up
+where it stopped.
+
+### Levels that open under the pointer
+
+Plenty of menus never wait for a click: the row opens its dropdown when the pointer
+arrives, and the row below it opens a flyout when the pointer reaches that. She works
+those too, because the *shape* of the page tells her which it is:
+
+- a `:hover` rule that actually **reveals** something (`.nav-item:hover > .dropdown`)
+  marks the control as a hover opener — a rule that only changes the background is not
+  a level;
+- an inline `onmouseenter` / `onpointerover` handler counts the same way;
+- a **caret** (▾ ▸ ▼) says a level opens here but not whether the pointer or the click
+  does it, so she offers the hover first and leaves the click standing by: *"First,
+  hover over “Reports” — I'll wait for you. If nothing opens, click it."*
+
+When she points at a hover level she waits for the **pointer to rest**, not for a
+click: she watches for the level to arrive under it, and once it does she looks for
+the next step inside what just opened. A level that a handler mounts only while the
+pointer is there counts exactly like one a stylesheet reveals — the DOM is the
+evidence either way, and the page is what decides.
+
 Ask for a route by naming it — *"how do I turn off memory"* — and she answers with
 the route she knows. You can also spell one out: *"settings → personalization →
 memory"*.
@@ -153,6 +180,40 @@ Four behaviours worth knowing, all deliberate:
   phase on the document, so it sees presses the site tries to intercept, and a step
   only completes when the press actually landed on the control she was pointing at.
 
+## What she can see
+
+Most pages mark their controls up properly, and she finds those with the usual
+semantic selectors (`a`, `button`, `input`, `role=…`). Modern app pages often do
+**not**: a settings row is a `<div>` with a pointer cursor and a click handler,
+nothing else. So she also looks at **behaviour** — an element that has a click
+handler, can take focus, or shows a `pointer` cursor is treated as a control, even
+when it is marked up as nothing at all.
+
+That matters for multi-level routes: the rows she needs to walk you to are usually
+exactly the ones no markup describes.
+
+### What the page hides on purpose
+
+Some controls are not merely unmarked — they are somewhere a `document.querySelectorAll`
+never looks. She walks there anyway:
+
+- **shadow roots**, open or closed. An open root is walked like any other subtree; a
+  *closed* root is invisible to the page's own code, and only an add-on can see it:
+  Firefox exposes it as `element.openOrClosedShadowRoot` (and through the `dom` API),
+  Chrome through `chrome.dom.openOrClosedShadowRoot`. Every use is guarded, so on an
+  ordinary page there is simply nothing extra to see.
+- **same-origin frames**. The rows of a settings panel that live in an `<iframe>` are
+  another document; she walks into it and brings its geometry back into the top
+  viewport's coordinates, so a step inside a frame is pointed at in the right place.
+  Cross-origin frames are not hers to read, and she leaves them alone.
+- **nodes that are thrown away and rebuilt.** A framework that re-renders replaces the
+  control she was pointing at; the step stays the same step, and she moves onto the
+  live node rather than waiting for a click on something that no longer exists.
+
+A control that acts on `pointerdown` and never emits a `click` is still a control: she
+watches the press itself, so a switch that only listens for the pointer does not
+strand the route.
+
 ## Test it without installing
 
 `tools/build_extension.py` also copies `extension/test/fixture.html` to
@@ -173,3 +234,40 @@ deepest control has no DOM at all until you have been walked down to it — whic
 the case multi-level guidance exists to serve. And it stands in for the add-on's
 background page, so the whole learn → remember → recall loop can be exercised over
 http without installing anything.
+
+`build/firefox/_test/spa.html` is the same idea as a modern app rather than a
+messy old one: a menu mounted on click behind a text-less avatar button, a settings
+view whose rows are plain `<div>`s with a pointer cursor and no role at all, and
+switches that only exist once the panel is open. It is the case the behavioural
+discovery and the reveal step exist for.
+
+```bash
+python serve.py
+# http://127.0.0.1:8000/build/firefox/_test/spa.html
+```
+
+`build/firefox/_test/stuck.html` is the hostile one: the account menu is a **portal
+inside a shadow root**, the settings rows are another **document in a same-origin
+frame**, and every click **rebuilds** the node she was pointing at. Its toggle listens
+for `pointerdown` and never emits a `click`. Ask her *"settings → personalization →
+memory"* and she has to reach the bottom of all three levels without getting stuck on
+the avatar.
+
+```bash
+python serve.py
+# http://127.0.0.1:8000/build/firefox/_test/stuck.html
+```
+
+`build/firefox/_test/hover.html` is the one whose **levels open on hover**: a CSS
+`:hover` dropdown, a flyout nested inside it, a menu that a handler *mounts* only
+while the pointer is over the row, and an ordinary click menu for contrast. Ask her
+*"platform → data sources → connectors"* and she has to say "hover over" twice and
+click once.
+
+```bash
+python serve.py
+# http://127.0.0.1:8000/build/firefox/_test/hover.html
+```
+
+The demo page links to all four, so they are one click away from
+<http://127.0.0.1:8000/>.

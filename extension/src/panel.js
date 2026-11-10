@@ -148,14 +148,18 @@
     el.pathName.textContent = p.name;
     el.pback.disabled = !(p.i > 0);
     const now = p.label || p.find || '…';
+    const act = p.via === 'hover' ? 'hover over' : p.via === 'either' ? 'hover over' : 'click';
+    const alt = p.via === 'either' ? ' (click it if nothing opens)' : '';
     el.pathNote.textContent = p.awaiting === 'settle'
       ? 'Waiting for the page to catch up…'
       : p.awaiting === 'missing'
         ? '“' + now + '” is not on this page yet. Open it and she will pick it up.'
-        : 'Step ' + (p.i + 1) + ' of ' + p.n + ' — click “' + now + '”. She waits for the click.';
+        : p.awaiting === 'reveal'
+          ? '“' + now + '” is not out yet — ' + act + ' “' + (p.reveal || 'the menu') + '” to open it, then she takes over.'
+          : 'Step ' + (p.i + 1) + ' of ' + p.n + ' — ' + act + ' “' + now + '”' + alt + '. She waits for you.';
     paintSteps((p.steps || []).map((s, i) => ({
       label: s,
-      cls: i < p.i ? 'done' : i === p.i ? (p.awaiting === 'missing' ? 'stuck now' : 'now') : '',
+      cls: i < p.i ? 'done' : i === p.i ? ((p.awaiting === 'missing' || p.awaiting === 'reveal') ? 'stuck now' : 'now') : '',
     })));
   }
 
