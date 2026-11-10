@@ -59,6 +59,10 @@ its **Crop** button an image editor). A control that says nothing about the job 
 never offered, so a wrong-but-confident point stays impossible; and when the request
 already names the control ("crop"), the literal match still wins.
 
+The literal match keeps the words you actually said, filler and all: *"my
+aadhaar"* finds **My Aadhaar**, not the **Download Aadhaar** link that happens to
+carry the same noun.
+
 ## Pressing what she points at
 
 `UIGuide.clickTarget()` presses the element she is holding — the whole pointer

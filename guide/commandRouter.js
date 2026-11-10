@@ -105,7 +105,11 @@ function levenshtein(a, b) {
 
 function nodeHaystack(node) {
   const parts = [node.label, ...(node.aliases || [])].map(normalize);
-  return { compact: stripFillers(node.label), tokens: new Set(parts.join(' ').split(' ').filter(Boolean)) };
+  return {
+    compact: stripFillers(node.label),
+    full: normalize(node.label),
+    tokens: new Set(parts.join(' ').split(' ').filter(Boolean)),
+  };
 }
 
 // A phrase has to be long enough to mean something, and it has to sit on word
@@ -117,10 +121,16 @@ function phraseWithin(text, phrase) {
   return (' ' + text + ' ').indexOf(' ' + phrase + ' ') >= 0;
 }
 
-function scoreNode(qTokens, compactQuery, node) {
+function scoreNode(qTokens, compactQuery, fullQuery, node) {
   const hay = nodeHaystack(node);
   const hayCompact = hay.compact;
   let score = 0;
+
+  // The whole request, filler and all. "My Aadhaar" has to beat "Download
+  // Aadhaar": both carry the word, but only one carries the words the person
+  // actually said, and a route step that points at the wrong half of a site is
+  // worse than no answer at all.
+  if (fullQuery.length >= MIN_PHRASE && hay.full.includes(fullQuery)) score += 3;
 
   // Whole condensed query embedded in the label is the strongest signal. The
   // reverse — the label embedded in the query — only counts when the label is a
@@ -165,6 +175,7 @@ function scoreNode(qTokens, compactQuery, node) {
 export function matchQuery(query, nodes) {
   const qTokens = queryTokens(query);
   const compactQuery = stripFillers(query);
+  const fullQuery = normalize(query);
   if (!qTokens.length && !compactQuery) return null;
 
   const flat = [];
@@ -172,7 +183,7 @@ export function matchQuery(query, nodes) {
   walk(nodes);
 
   const plain = flat
-    .map((n) => ({ node: n, score: scoreNode(qTokens, compactQuery, n) }))
+    .map((n) => ({ node: n, score: scoreNode(qTokens, compactQuery, fullQuery, n) }))
     .sort((a, b) => b.score - a.score);
   let best = plain[0] && plain[0].score > 0 ? plain[0] : null;
   let bestScore = best ? best.score : 0;
