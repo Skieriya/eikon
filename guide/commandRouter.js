@@ -11,6 +11,11 @@
 // a plain goto.
 
 import { STOPWORDS } from './discovery.js';
+import { semMatch } from './semantics.js';
+
+// People talk to her like a person: "I want to edit images", "how do I turn
+// memory off". The words at the front are not the name of anything.
+const LEAD_FILLER = /^\s*(?:please\s+)?(?:i\s+(?:want|need|would\s+like|'?d\s+like)\s+to|i\s+'?m\s+trying\s+to|how\s+do\s+i|how\s+can\s+i|how\s+to|help\s+me|let\s+me|lets)\s+/i;
 
 const NAV_PATTERNS = [
   { type: 'next', re: /^\s*(next|forward|down|step)\b/i },
@@ -23,18 +28,26 @@ const NAV_PATTERNS = [
 ];
 
 const GOTO_PATTERNS = [
+  { type: 'goto', re: /^\s*i\s+(?:want|need|would\s+like|'?d\s+like)\s+to\s+(.*)$/i },
   { type: 'goto', re: /^\s*(?:where\s+(?:is|are|can\s+i\s+find|do\s+i\s+find)?|where's|what'?s|what\s+(?:is|are|about)|show\s+me|show|go\s+to|navigate\s+to|take\s+me\s+to|get\s+me\s+to|guide\s+me\s+to|find|open|click|point\s+(?:at|to)|look\s+at|jump\s+to)\b\s*(.*)$/i },
 ];
 
 // Changing a setting is phrased as a verb on your own thing, not as a place.
 const CHANGE_VERB = /^\s*(turn|switch|disable|enable|delete|remove|change|hide|mute|unmute|update|manage|set|stop|start|activate|deactivate|cancel|allow|block)\b/i;
 
+// The request with the pleasantries taken off, so the rest of the engine only
+// ever sees the part that names something.
+export function cleanQuery(raw) {
+  return String(raw || '').replace(LEAD_FILLER, '').trim();
+}
+
 export function looksLikeGoal(raw) {
   const t = normalize(raw);
   if (!t) return false;
+  const said = normalize(cleanQuery(raw));
   if (/\bhow\s+(?:do|can|to|should|would|one)\b/.test(t)) return true;
   if (/^\s*where\b/.test(t) && /\b(turn|switch|disable|enable|delete|remove|change|hide|set|update|manage|stop|start)\b/.test(t)) return true;
-  if (CHANGE_VERB.test(t) && /\b(my|the|it|them|off|on|up|to|all)\b/.test(t)) return true;
+  if (CHANGE_VERB.test(said) && /\b(my|the|it|them|off|on|up|to|all)\b/.test(said)) return true;
   return false;
 }
 
@@ -158,16 +171,30 @@ export function matchQuery(query, nodes) {
   const walk = (list) => list.forEach((n) => { flat.push(n); walk(n.children); });
   walk(nodes);
 
-  let best = null, bestScore = 0;
-  for (const node of flat) {
-    const s = scoreNode(qTokens, compactQuery, node);
-    if (s > bestScore) { bestScore = s; best = node; }
+  const plain = flat
+    .map((n) => ({ node: n, score: scoreNode(qTokens, compactQuery, n) }))
+    .sort((a, b) => b.score - a.score);
+  let best = plain[0] && plain[0].score > 0 ? plain[0] : null;
+  let bestScore = best ? best.score : 0;
+
+  // Sometimes they are not naming a thing at all, they are describing a job:
+  // "i want to edit images" is a request for whatever this page calls the
+  // thing that edits an image. A literal match on the word "image" would point
+  // at the gallery instead, so the job is scored too — and it wins when the
+  // literal match answered only the object of the request and left the verb
+  // alone, because the verb is the part that says what they want done.
+  const sem = semMatch(query, nodes);
+  if (sem) {
+    const said = sem.verbs || [];
+    const usedVerb = !!(best && said.some((w) => nodeHaystack(best.node).tokens.has(w)));
+    if (sem.score > bestScore || (said.length && !usedVerb && (sem.verb || sem.ctrl))) {
+      return { node: sem.node, score: sem.score, candidates: sem.candidates, semantic: true };
+    }
   }
+
   // A real match needs at least one strong signal; weak fuzzy overlap is treated
   // as "not found" so nonsense inputs (e.g. "stock ticker") don't misguide.
   const MIN_FOUND = 2;
   if (!best || bestScore < MIN_FOUND) return null;
-  return { node: best, score: bestScore, candidates: flat
-    .map((n) => ({ node: n, score: scoreNode(qTokens, compactQuery, n) }))
-    .sort((a, b) => b.score - a.score).slice(0, 3) };
+  return { node: best.node, score: bestScore, candidates: plain.slice(0, 3) };
 }

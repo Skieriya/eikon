@@ -220,6 +220,7 @@
   function sig(s) {
     const p = s.path;
     return [s.count, s.cycling ? 1 : 0, s.current ? s.current.label : '',
+      s.held ? 1 : 0,
       p ? [p.name, p.i, p.n, p.awaiting, p.via, p.label].join('|') : '',
       s.teaching ? 'T' + (s.teaching.steps || []).length : '', s.known || 0].join('~');
   }
@@ -236,6 +237,7 @@
       count: s.count,
       cycling: s.cycling,
       current: s.current ? s.current.label : null,
+      held: !!s.held,
       path: s.path || null,
       teaching: s.teaching || null,
       known: s.known || 0,
@@ -408,6 +410,17 @@
         report(true);
         break;
       case 'say': run(String(d.text || '').slice(0, 300)); break;
+      case 'click': {
+        // Clicking what she is pointing at. While she is walking a route her
+        // own words are the better commentary, so the bar stays quiet then.
+        if (!window.UIGuide) break;
+        const walking = !!window.UIGuide.pathStatus();
+        const r = window.UIGuide.clickTarget();
+        if (r && r.ok) { if (!walking) caption('Clicked ' + r.label, 'ok'); }
+        else caption('She is not pointing at anything yet', 'error');
+        report();
+        break;
+      }
       case 'step': run(d.delta && d.delta < 0 ? 'previous' : 'next'); break;
       case 'cycle': run('cycle'); break;
       case 'stop': run('stop'); break;

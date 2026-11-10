@@ -6,6 +6,7 @@ trapped inside it.
 
 ```
 "where is the email field?"   →  she scrolls to it and points
+"i want to edit images"       →  she finds the button that does that, not one that says "images"
 "next" / "previous"           →  walk the page in reading order
 "cycle"                       →  she tours it by herself until you press Esc
 "how do I turn off memory"    →  she walks you there, one click at a time
@@ -53,11 +54,42 @@ certificate (unsigned `.xpi` files only load in Developer Edition/Nightly).
 | Next / previous element | **Next** / **Back**, or <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd> / <kbd>P</kbd> |
 | Tour the page | **Walk the page**, or <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd>; <kbd>Esc</kbd> stops her |
 | Find a setting by name | ask "how do I …" — she walks you there, a step at a time |
+| Find a control by what it does | ask "i want to …" — see below |
+| Press what she points at | **Click it** in the ask bar, once she is pointing at something |
 | Teach her a route | **Teach her a route** in the ask bar, do it yourself, then say **done** |
 | Move her | press on her and drag |
 | Resize her | drag her bottom-right corner, or spin the wheel over her |
 | Lost her? | double-click her — back to the bottom-right corner at the default size |
 | Off | popup → **Hide her** (**Bring her back** puts her on again) |
+
+## Asking by meaning
+
+Nobody knows what a page calls its buttons, so people ask for the job:
+
+| You say | She finds |
+|---------|----------|
+| "i want to edit images" | the button that edits a photo — **Adjust**, not the **Images** link |
+| "i want to crop an image" | whichever control does the cropping |
+| "i want to delete a photo" | the destructive one, not the word "photo" |
+| "i want to upload an image" | the file field, whatever the page calls it |
+
+She reads the request as a **verb** and an **object**, then scores every control she
+found by how much the page says about that job — on the control itself, or on the
+panel it sits in (a toolbar marked *"Photo editor"* is what makes its **Crop** button
+an image editor). A control that says nothing about the job is never offered, so she
+would rather say "I cannot find that" than point at something wrong.
+
+## Clicking what she points at
+
+The ask bar carries a **Click it** button, live only while she is pointing at
+something. One press of it is one press on the control: the whole pointer sequence,
+in the page's own document, because some controls act on `pointerdown` and never
+emit a `click` at all.
+
+It is opt-in, and it is the only thing the add-on ever does to a page besides
+scrolling. Left alone, she still waits for **you** to click the step she is
+pointing at — and when you press the button for her, the guide sees that press like
+any other and the route moves on by itself.
 
 ## Multi-level routes
 
@@ -166,9 +198,10 @@ Four behaviours worth knowing, all deliberate:
 
 - **She scrolls to a target that is off screen** (`reveal()` in the glue) and then
   follows the element down, because the rect is re-sampled from the live element every
-  frame. Scrolling is the only thing the add-on does to a page: it never clicks, types,
-  hides, or rewrites anything. Waiting for *you* to click is the same rule seen from
-  the other side.
+  frame. Scrolling is what she does to a page on her own: she never clicks, types,
+  hides, or rewrites anything — unless you press **Click it**, which is one press of
+  yours, spent on the control she is pointing at. Waiting for *you* to click is the
+  same rule seen from the other side.
 - **A press on her art is hers, not the site's.** Her layer stays click-through
   everywhere else; the page side hit-tests the box she reports (`{t:'dock'}`) and
   swallows the press in capture phase only inside it. That is what makes dragging work
@@ -269,5 +302,17 @@ python serve.py
 # http://127.0.0.1:8000/build/firefox/_test/hover.html
 ```
 
-The demo page links to all four, so they are one click away from
+`build/firefox/_test/semantic.html` is the one that asks **by meaning**: a photo
+editor whose tools are named the way a page would really name them — **Crop**,
+**Adjust**, **Filters**, a brush icon with a tooltip — and none of them called
+"edit". The nav bar even carries an **Images** link, which is exactly where a
+literal reading of *"i want to edit images"* lands. Ask that, and she has to work
+out which button does the job — then **Click it** and the page records the press.
+
+```bash
+python serve.py
+# http://127.0.0.1:8000/build/firefox/_test/semantic.html
+```
+
+The demo page links to all five, so they are one click away from
 <http://127.0.0.1:8000/>.

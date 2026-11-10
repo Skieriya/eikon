@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Northwind Studio — a photo editor</title>
+<!-- The fixture for meaning-based search. Every control here is named the way
+     the page would really name it — "Crop", "Adjust", "Filters", a brush icon
+     with a tooltip — and none of them is called "edit". The request people
+     actually make is "i want to edit images", so a guide that can only read
+     labels has nothing to answer with. -->
+<style>
+  :root {
+    --bg: #0d1420; --surface: #141d2c; --line: #24334a; --ink: #e8eefc;
+    --dim: #8ea3c4; --cyan: #53e0d0; --amber: #ffb454;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.5 system-ui, "Segoe UI", Roboto, sans-serif; }
+  .topnav { display: flex; align-items: center; gap: 18px; padding: 12px 22px;
+    border-bottom: 1px solid var(--line); background: #101827; position: sticky; top: 0; }
+  .brand { font-weight: 700; letter-spacing: .02em; }
+  .topnav a { color: var(--dim); text-decoration: none; }
+  .topnav a:hover { color: var(--cyan); }
+  .spacer { flex: 1; }
+  .avatar { width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--line);
+    background: #1d2a3f; color: var(--ink); cursor: pointer; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 22px; }
+  h1 { margin: 0 0 4px; font-size: 22px; }
+  .sub { color: var(--dim); margin: 0 0 18px; }
+  .stage { display: grid; grid-template-columns: 1fr 280px; gap: 18px; align-items: start; }
+  .photo { height: 260px; border-radius: 14px; border: 1px solid var(--line);
+    background: linear-gradient(160deg, #ff9a5a, #b34bd6 55%, #2b3f8f); }
+  .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .toolbar button, .actions button { padding: 7px 12px; border-radius: 9px; cursor: pointer;
+    background: #1a2740; border: 1px solid var(--line); color: var(--ink); font: inherit; }
+  .toolbar button:hover, .actions button:hover { border-color: var(--cyan); color: var(--cyan); }
+  .icon { width: 36px; height: 36px; padding: 0; font-size: 15px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+  .danger { border-color: #5a2a3a; color: #ff9db0; }
+  .panel { border: 1px solid var(--line); border-radius: 14px; background: var(--surface); padding: 14px 16px; }
+  .panel h2 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase;
+    letter-spacing: .07em; color: var(--dim); }
+  .asset { display: block; width: 100%; text-align: left; padding: 8px 10px; margin-bottom: 6px;
+    border-radius: 9px; background: #1a2740; border: 1px solid var(--line); color: var(--ink);
+    cursor: pointer; font: inherit; }
+  .asset:hover { border-color: var(--cyan); }
+  .try { margin: 20px 0; padding: 14px 16px; border-radius: 14px;
+    border: 1px dashed var(--line); background: #101827; }
+  .try strong { display: block; margin-bottom: 6px; }
+  .try p { margin: 0 0 10px; color: var(--dim); font-size: 13px; }
+  .runs { display: flex; flex-wrap: wrap; gap: 8px; }
+  .run { padding: 7px 12px; border-radius: 9px; cursor: pointer; font: inherit;
+    border: 1px solid var(--line); background: #1a2740; color: var(--ink); }
+  .run:hover { border-color: var(--cyan); color: var(--cyan); }
+  code { background: #0a111c; border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; }
+  .field { display: flex; gap: 8px; align-items: center; margin-top: 16px; color: var(--dim); }
+  .field input[type=search], .field input[type=file] { font: inherit; color: var(--ink); }
+  .field input[type=search] { flex: 1; padding: 7px 10px; border-radius: 9px;
+    background: #1a2740; border: 1px solid var(--line); }
+</style>
+</head>
+<body>
+
+<nav class="topnav" aria-label="Main">
+  <span class="brand">Northwind</span>
+  <a href="#projects">Projects</a>
+  <!-- The trap: a literal reading of "edit images" lands here. -->
+  <a href="#images">Images</a>
+  <a href="#pricing">Pricing</a>
+  <span class="spacer"></span>
+  <a href="#signin">Sign in</a>
+  <button class="avatar" data-testid="avatar" title="Account">N</button>
+</nav>
+
+<div class="wrap">
+  <h1>Sunset photo</h1>
+  <p class="sub">Every control here is named the way a page would really name it. None of them
+    is called “edit”, and the request people make is “i want to edit images”.</p>
+
+  <div class="stage">
+    <div>
+      <div class="photo" data-testid="photo"></div>
+
+      <div class="toolbar" role="toolbar" aria-label="Photo editor">
+        <button data-testid="tool-crop">Crop</button>
+        <button data-testid="tool-adjust">Adjust</button>
+        <button data-testid="tool-filters">Filters</button>
+        <button class="icon" data-testid="tool-brush" title="Brush">&#9635;</button>
+        <button data-testid="tool-undo">Undo</button>
+      </div>
+
+      <div class="actions">
+        <button data-testid="act-share">Share</button>
+        <button data-testid="act-download">Download</button>
+        <button data-testid="act-delete" class="danger">Delete photo</button>
+        <button data-testid="act-print">Print</button>
+      </div>
+
+      <div class="field">
+        <label for="q">Search</label>
+        <input id="q" type="search" placeholder="Search assets" aria-label="Search assets">
+        <label for="add">Add from device</label>
+        <input id="add" type="file" data-testid="add-file">
+      </div>
+    </div>
+
+    <section id="assets" class="panel" aria-label="Assets">
+      <h2>Assets</h2>
+      <button class="asset" data-testid="asset-harbour">Harbour.png</button>
+      <button class="asset" data-testid="asset-dunes">Dunes.png</button>
+      <button class="asset" data-testid="asset-sign">Old sign.png</button>
+    </section>
+  </div>
+
+  <div class="try" data-guide-exclude>
+    <strong>Try it</strong>
+    <p>None of these names is the name of the control. Ask in the words a person uses and she
+      has to work out which button does the job — then <em>Click it</em> presses it for you.</p>
+    <div class="runs">
+      <button class="run" data-run="i want to edit images">i want to edit images</button>
+      <button class="run" data-run="i want to delete a photo">i want to delete a photo</button>
+      <button class="run" data-run="i want to download the image">i want to download the image</button>
+      <button class="run" data-run="i want to share a photo">i want to share a photo</button>
+      <button class="run" data-run="i want to upload an image">i want to upload an image</button>
+      <button class="run" data-run="where is harbour">where is harbour</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  window.__hutaoRaf = 'manual';
+</script>
+<script>
+  // The add-on's background page, stood in over http so learned routes survive a
+  // reload here exactly as they do in the browser.
+  (function () {
+    const KEY = 'paths.v1';
+    const saved = localStorage.getItem('fx.' + KEY);
+    const store = saved ? { [KEY]: JSON.parse(saved) } : {};
+    const listeners = [];
+    const storageListeners = [];
+    const stub = {
+      runtime: {
+        getURL(name) { return new URL('../' + name, document.baseURI).href; },
+        onMessage: { addListener(fn) { listeners.push(fn); } },
+        sendMessage(msg) {
+          const out = listeners.map((fn) => fn(msg)).filter((r) => r !== undefined);
+          return Promise.resolve(out.length ? out[0] : undefined);
+        },
+      },
+      storage: { local: {
+        get(key) { return Promise.resolve({ [key]: store[key] }); },
+        set(obj) {
+          const changes = {};
+          for (const k in obj) changes[k] = { oldValue: store[k], newValue: obj[k] };
+          Object.assign(store, obj);
+          localStorage.setItem('fx.' + KEY, JSON.stringify(store[KEY] || []));
+          storageListeners.forEach((fn) => fn(changes, 'local'));
+          return Promise.resolve();
+        },
+      } },
+    };
+    stub.storage.onChanged = { addListener(fn) { storageListeners.push(fn); } };
+    window.browser = stub;
+    const req = new XMLHttpRequest();
+    req.open('GET', '../background.js', false);
+    req.send(null);
+    if (req.status === 200) new Function('browser', req.responseText)(stub);
+  })();
+</script>
+<script src="../content.js"></script>
+<script>
+  (function () {
+    document.querySelectorAll('.run').forEach((b) => {
+      b.addEventListener('click', () => {
+        const g = window.UIGuide;
+        if (g) g.say(b.dataset.run, { instant: true });
+      });
+    });
+    // What a press did to the page: the harness needs to see that the click
+    // button really pressed the control and not just that she pointed at it.
+    window.__clicks = [];
+    document.addEventListener('click', (e) => {
+      window.__clicks.push((e.target && e.target.getAttribute && e.target.getAttribute('data-testid')) || (e.target && e.target.textContent || '').trim());
+    }, true);
+
+    window.__semanticGuide = {
+      status() {
+        const g = window.UIGuide;
+        return { count: g ? g.status().count : 0, held: g ? g.status().held : false,
+          path: g ? g.pathStatus() : null };
+      },
+      target() {
+        const g = window.UIGuide;
+        const n = g && g.queue ? g.queue.current : null;
+        if (!n) return null;
+        return { label: n.label, testid: n.el && n.el.getAttribute('data-testid'),
+          tag: n.el && n.el.tagName };
+      },
+      say(text) { return window.UIGuide.say(text, { instant: true }); },
+      click() { return window.UIGuide.clickTarget(); },
+    };
+  })();
+</script>
+</body>
+</html>

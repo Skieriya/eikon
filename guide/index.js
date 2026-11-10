@@ -7,7 +7,7 @@
 
 import { discoverUIElements, invalidateStyleCache, isPressable, hoverEvidence, rectOf, isLive, closestDeep, parentEl, scrollIntoViewDeep } from './discovery.js';
 import { CircularQueue, flattenTree } from './circularQueue.js';
-import { parseIntent, matchQuery } from './commandRouter.js';
+import { parseIntent, matchQuery, cleanQuery } from './commandRouter.js';
 import { createGazeController } from './gazeController.js';
 import { createLive2dGuideBridge } from './live2dBridge.js';
 import { RECIPES, createPathRunner, makePlan, parseChain, planFor } from './paths.js';
@@ -156,10 +156,68 @@ function status() {
     path: path.status(),
     teaching: teaching ? { goal: teaching.goal, host: teaching.host, steps: teaching.steps.map((s) => s.find) } : null,
     known: learned.length,
+    held: !!heldElement(),
   };
 }
 
 function subscribe(cb) { listeners.add(cb); return () => listeners.delete(cb); }
+
+// ---- pressing what she points at ----------------------------------------------
+// The element she is looking at: the step she is holding, or the last thing she
+// looked at. Everything that can be clicked works on this one thing.
+function heldElement() {
+  if (path.active && path.held) return path.held;
+  const cur = queue.current;
+  return cur && cur.el ? cur.el : null;
+}
+
+// Pressing an element the way a person does: the pointer arrives, the button
+// goes down, it comes up, the click lands. Some controls act on pointerdown and
+// never emit a click at all, and a click dispatched on its own would leave them
+// untouched — so the whole sequence is sent, in the element's own document.
+function pressElement(el) {
+  if (!el || !el.isConnected) return false;
+  const doc = el.ownerDocument || document;
+  const view = doc.defaultView || window;
+  const r = rectOf(el);
+  const x = r ? Math.round(r.left + r.width / 2) : 0;
+  const y = r ? Math.round(r.top + r.height / 2) : 0;
+  const base = { bubbles: true, cancelable: true, composed: true, view: view,
+                 clientX: x, clientY: y, screenX: x, screenY: y, button: 0, buttons: 1, detail: 1 };
+  const fire = (type, Ctor, extra) => {
+    if (!Ctor) return;
+    try { el.dispatchEvent(new Ctor(type, Object.assign({}, base, extra || {}))); }
+    catch (_) { /* this browser has no such event type */ }
+  };
+  const PE = (view && view.PointerEvent) || (typeof PointerEvent !== 'undefined' ? PointerEvent : null);
+  const ME = (view && view.MouseEvent) || (typeof MouseEvent !== 'undefined' ? MouseEvent : null);
+  fire('pointerover', PE, { buttons: 0 });
+  fire('pointerenter', PE, { buttons: 0 });
+  fire('mouseover', ME, { buttons: 0 });
+  fire('mouseenter', ME, { buttons: 0 });
+  fire('pointermove', PE, { buttons: 0 });
+  fire('pointerdown', PE, { buttons: 1 });
+  fire('mousedown', ME, { buttons: 1 });
+  try { el.focus({ preventScroll: true }); } catch (_) { try { el.focus(); } catch (_) {} }
+  fire('pointerup', PE, { buttons: 0 });
+  fire('mouseup', ME, { buttons: 0 });
+  fire('click', ME, { buttons: 0 });
+  return true;
+}
+
+// Clicking what she is pointing at, for the person who would rather not reach
+// for the mouse. One press of the button is one press on the control, and the
+// guide sees that press like any other — so a route moves on by itself.
+function clickTarget() {
+  const el = heldElement();
+  if (!el) return { ok: false, reason: 'nothing-to-click' };
+  const node = flatNodes().find((n) => n.el === el);
+  const label = (node && node.label)
+    || (el.getAttribute && el.getAttribute('aria-label'))
+    || 'it';
+  pressElement(el);
+  return { ok: true, label };
+}
 
 async function goto(node, opts) {
   if (!node) return { ok: false, reason: 'nothing to go to' };
@@ -753,9 +811,9 @@ async function say(raw, opts) {
 
 async function gotoNamed(query, opts, spoken) {
   if (path.active) path.stop();               // a fresh question ends the old errand
-  const match = matchQuery(query, roots);
+  const match = matchQuery(cleanQuery(query), roots);
   if (!match) {
-    return { spoken, result: { ok: false, reason: 'not-found', query } };
+    return { spoken, result: { ok: false, reason: 'not-found', query: cleanQuery(query) } };
   }
   const r = await goto(match.node, opts);
   return { spoken, result: r, matched: match.node.label, candidates: match.candidates.map((c) => c.node.label) };
@@ -792,6 +850,7 @@ function wireWidgets() {
   const nextBtn = document.getElementById('guideNext');
   const prevBtn = document.getElementById('guidePrev');
   const autoBtn = document.getElementById('guideAuto');
+  const pressBtn = document.getElementById('guidePress');
 
   const submit = () => {
     if (!box || !box.value.trim()) return;
@@ -822,10 +881,18 @@ function wireWidgets() {
     if (cycleTimer) { stopCycle(); autoBtn.textContent = 'Auto-cycle'; }
     else { startCycle(); autoBtn.textContent = 'Stop cycling'; }
   });
+  // Clicking what she is pointing at, for the person who would rather not reach
+  // for the mouse.
+  if (pressBtn) pressBtn.addEventListener('click', () => {
+    const r = clickTarget();
+    if (statusEl && (!r || !r.ok)) statusEl.textContent = 'She is not pointing at anything yet.';
+  });
+  if (pressBtn) pressBtn.disabled = true;      // she is not pointing at anything yet
 
   subscribe((snap) => {
     if (autoBtn && cycleTimer) autoBtn.textContent = 'Stop cycling';
     else if (autoBtn) autoBtn.textContent = 'Auto-cycle';
+    if (pressBtn) pressBtn.disabled = !snap.held;
   });
 }
 
@@ -873,6 +940,7 @@ function init(theBridge, opts = {}) {
     startCycle, stopCycle, jumpTo,
     walk, stopPath: () => path.stop(), pathStatus: () => path.status(),
     setPaths, teach: teachStart, teachStop,
+    clickTarget, heldElement,
     get elements() { return roots; },
     get queue() { return queue; },
     get knownPaths() { return learned.slice(); },

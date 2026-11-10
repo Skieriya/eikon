@@ -8,7 +8,7 @@
 
   const Q = new URLSearchParams(location.search);
   const NONCE = Q.get('n') || null;
-  const guide = { count: 0, current: null, cycling: false, open: false, path: null, teaching: null, known: 0 };
+  const guide = { count: 0, current: null, cycling: false, open: false, path: null, teaching: null, known: 0, held: false };
   let items = [];
 
   const el = {
@@ -17,6 +17,7 @@
     prev: document.getElementById('prev'),
     next: document.getElementById('next'),
     cycle: document.getElementById('cycle'),
+    press: document.getElementById('press'),
     more: document.getElementById('more'),
     sheet: document.getElementById('sheet'),
     status: document.getElementById('status'),
@@ -71,6 +72,8 @@
     el.prev.disabled = el.next.disabled = guide.count < 1;
     el.cycle.classList.toggle('on', !!guide.cycling);
     el.cycle.textContent = guide.cycling ? 'Stop' : 'Cycle';
+    // The button only lights up when she is actually pointing at something.
+    el.press.disabled = !guide.held;
   }
 
   function paintList() {
@@ -171,6 +174,7 @@
   el.next.addEventListener('click', () => send({ t: 'step', delta: 1 }));
   el.prev.addEventListener('click', () => send({ t: 'step', delta: -1 }));
   el.cycle.addEventListener('click', () => send({ t: guide.cycling ? 'stop' : 'cycle' }));
+  el.press.addEventListener('click', () => send({ t: 'click' }));
   el.more.addEventListener('click', () => {
     if (guide.open) setOpen(false);
     else { setOpen(true); send({ t: 'list' }); }
@@ -201,6 +205,7 @@
         guide.path = d.path || null;
         guide.teaching = d.teaching || null;
         guide.known = Number(d.known) || 0;
+        guide.held = !!d.held;
         paintCount();
         paintList();
         paintRoute();

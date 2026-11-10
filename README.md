@@ -130,6 +130,12 @@ The same guide, on every site instead of only on this page: Hu Tao sits in the c
 whatever you are looking at, reads its DOM and points at what you ask for
 (`where is the email field?` scrolls to it and lights it up).
 
+She also answers in the words people actually use. *"I want to edit images"* finds
+the button that edits a photo, not the page's **Images** link — she reads the job
+out of the request and matches it against what the controls and the panels around
+them say they do. And when she is pointing at something, the ask bar's **Click it**
+button presses it for you.
+
 She also walks you to the places that take more than one click. Ask *how do I turn off
 memory* and she points at the first step, waits until you have actually clicked it,
 then finds the next one in whatever the page has become — because the control you

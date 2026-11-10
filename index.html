@@ -202,11 +202,12 @@
     <!-- Guide command console: natural-language commands ("where is faq?", "next").
          data-guide-exclude keeps the guide from pointing at its own controls. -->
     <div id="guideConsole" class="guide-console" data-guide-exclude>
-      <input id="guideBox" type="text" aria-label="Guide command" placeholder="Try: where is the FAQ?" autocomplete="off">
+      <input id="guideBox" type="text" aria-label="Guide command" placeholder="Try: where is the FAQ? · i want to edit images" autocomplete="off">
       <button id="guideGo" type="button">Go</button>
       <button id="guidePrev" type="button" title="Previous element">&#9664;</button>
       <button id="guideNext" type="button" title="Next element">&#9654;</button>
       <button id="guideAuto" type="button">Auto-cycle</button>
+      <button id="guidePress" type="button" title="Click the element she is pointing at">Click it</button>
       <p id="guideStatus" class="guide-status"></p>
     </div>
 
@@ -223,6 +224,7 @@
       <a href="./build/firefox/_test/spa.html">Re-rendering SPA</a>
       <a href="./build/firefox/_test/stuck.html">Hidden controls</a>
       <a href="./build/firefox/_test/hover.html">Levels that open on hover</a>
+      <a href="./build/firefox/_test/semantic.html">Asking by meaning</a>
     </nav>
 
     <div id="loader">

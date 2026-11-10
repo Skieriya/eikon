@@ -15,7 +15,8 @@ queue, matching and animation logic lives here.
 | `discovery.js` | Queries the live DOM and builds a **tree** of UI elements. Landmarks (nav/section/header/footer) hold their controls as **subcontents**, but every control is also its own addressable node. Each node gets a `label`, an `id`, and an `aliases` list (its own words + synonyms like faq↔help↔support). Two passes: the **semantic** one (marked-up controls) and a **behavioural** one, which treats an element with a click handler, focusability or a `pointer` cursor as a control even when it is a plain `<div>`. It also walks **shadow roots** (open, and the closed ones only an add-on can see) and **same-origin frames**, and it judges whether a control opens a level **under the pointer** (a `:hover` rule that reveals something, an inline mouse handler, a caret). |
 | `circularQueue.js` | Flattens the tree depth-first and wraps it in a **circular queue**: `next`/`prev` cycle the whole page with no dead ends, `jumpTo(id)` snaps to any node. A panel and its subcontents sit adjacent in the ring. |
 | `gazeController.js` | Converts an element's **screen center → clip space** and glides the model's gaze there with an ease-in-out tween while holding mouse-follow. One `bridge.gesture()` kicks off a guiding motion; head, eyes and arm all track the same vector, so they sweep to the target together. |
-| `commandRouter.js` | Parses natural language into intents (`goto` / `goal` / `next` / `prev` / `cycle` / `stop` / `list` / `teach` / `done`) and fuzzy-matches the target (exact alias, substring, prefix, Levenshtein), descending into subcontents so "email" finds the field inside the form. |
+| `commandRouter.js` | Parses natural language into intents (`goto` / `goal` / `next` / `prev` / `cycle` / `stop` / `list` / `teach` / `done`) and fuzzy-matches the target (exact alias, substring, prefix, Levenshtein), descending into subcontents so "email" finds the field inside the form. It also takes the pleasantries off the front of a request — "I want to …", "how do I …" — so the rest of the engine only sees what names something. |
+| `semantics.js` | Reads a request as the **job** it describes — a verb ("edit") and an object ("images") — and scores every discovered control by how well it fits: the verb it uses, a synonym of it, a word that only names the job ("crop", "filters"), the object, or the panel the control sits in ("Photo editor"). A control that says nothing about the job is never offered, so *"i want to edit images"* finds the page's **Adjust** button rather than its **Images** link. |
 | `paths.js` | Multi-level routes: a plan is an ordered list of steps, each resolved by fuzzy text matching with a saved-selector fallback. Ships a small table of known flows (`RECIPES`) and matches a question against them or against what the host taught her. |
 | `index.js` | Wires it all: waits for the bridge, builds the queue, exposes `window.UIGuide`, re-discovers on DOM changes, runs the route state machine, watches for the press — or the hover — that completes a step, and binds the optional command box / controls. |
 
@@ -23,10 +24,13 @@ queue, matching and animation logic lives here.
 
 ```js
 UIGuide.say('where is faq');   // intent -> match -> animated look; returns a promise
+UIGuide.say('i want to edit images');  // the same, but by what the control DOES
 UIGuide.say('next');           // step the circular queue
 UIGuide.startCycle(2200);      // auto-advance every 2.2s
 UIGuide.jumpTo('faq');         // go straight to a node by id
-UIGuide.status();              // { count, current, cycling, items, path, teaching, known }
+UIGuide.clickTarget();         // press the element she is pointing at
+UIGuide.heldElement();         // that element, if there is one
+UIGuide.status();              // { count, current, cycling, items, path, teaching, known, held }
                                 //   path: { name, i, n, awaiting, reveal, reveals, via, steps }
                                 //     via: 'click' | 'hover' | 'either' — how the held
                                 //          control is worked on this page
@@ -36,6 +40,32 @@ UIGuide.elements;              // the discovered tree
 
 Every method returns a result object (`{ ok, at }` on success, `{ ok:false, reason }`
 otherwise), so callers can react to "not-found" etc.
+
+## Asking by meaning
+
+Nobody knows what a page calls its buttons, so people ask for the **job**:
+
+```
+"i want to edit images"     →  the page's Adjust button, not its Images link
+"i want to crop an image"   →  whichever control does the cropping
+"i want to delete a photo"  →  the destructive one, not the word "photo"
+```
+
+`semantics.js` reads the request as a verb and an object, then scores every control
+she found by how much the page says about that job — on the control itself
+(`Adjust`, `Crop`, `Filters`, a `type="file"` field is the upload whatever it is
+called) or on the panel it sits in (a toolbar marked *"Photo editor"* is what makes
+its **Crop** button an image editor). A control that says nothing about the job is
+never offered, so a wrong-but-confident point stays impossible; and when the request
+already names the control ("crop"), the literal match still wins.
+
+## Pressing what she points at
+
+`UIGuide.clickTarget()` presses the element she is holding — the whole pointer
+sequence, in the element's own document, because some controls act on `pointerdown`
+and never emit a `click` at all. It is opt-in: she never presses anything until
+asked, and a route still waits for *you* to click unless you press the button for
+her — in which case the guide sees that press like any other and the route moves on.
 
 ## Multi-level routes
 

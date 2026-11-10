@@ -35,6 +35,7 @@ OUT = os.path.join(ROOT, "build", "firefox")
 BUNDLE = [
     "guide/discovery.js",
     "guide/circularQueue.js",
+    "guide/semantics.js",
     "guide/commandRouter.js",
     "guide/paths.js",
     "guide/gazeController.js",
